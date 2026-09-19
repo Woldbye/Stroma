@@ -1,0 +1,52 @@
+{
+  "name": "stroma",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.15.1",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "run-p type-check \"build-only {@}\" --",
+    "preview": "vite preview",
+    "build-only": "vite build",
+    "type-check": "vue-tsc --build",
+    "lint:oxlint": "oxlint . --fix -D correctness",
+    "lint:eslint": "eslint . --fix",
+    "lint": "run-s lint:oxlint lint:eslint",
+    "lint:check:oxlint": "oxlint . -D correctness",
+    "lint:check:eslint": "eslint .",
+    "lint:check": "run-s lint:check:oxlint lint:check:eslint",
+    "format": "prettier --write \"{src,docs}/**/*.{ts,vue,css,json,md}\" \"*.md\"",
+    "format:check": "prettier --check \"{src,docs}/**/*.{ts,vue,css,json,md}\" \"*.md\""
+  },
+  "dependencies": {
+    "ogl": "^1.0.11",
+    "vue": "^3.5.43"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@tsconfig/node22": "^22.0.6",
+    "@types/node": "^26.6.2",
+    "@vitejs/plugin-vue": "^6.0.9",
+    "@vue/eslint-config-prettier": "^10.2.0",
+    "@vue/eslint-config-typescript": "^14.9.0",
+    "@vue/tsconfig": "^0.9.1",
+    "eslint": "^10.11.0",
+    "eslint-plugin-oxlint": "~1.83.0",
+    "eslint-plugin-vue": "~10.11.0",
+    "eslint-plugin-vuejs-accessibility": "^2.6.0",
+    "jiti": "^2.7.0",
+    "npm-run-all2": "^9.0.3",
+    "oxlint": "~1.83.0",
+    "prettier": "3.9.8",
+    "prettier-plugin-tailwindcss": "^0.8.1",
+    "tailwindcss": "^4.3.3",
+    "typescript": "~6.0.0",
+    "vite": "^8.3.0",
+    "vite-plugin-vue-devtools": "^8.2.1",
+    "vue-tsc": "^3.3.11"
+  }
+}
