@@ -135,6 +135,7 @@ uniform float uCryptJitter;
 uniform float uCryptFraction;
 uniform float uCryptFeather;
 uniform float uCryptDepth;
+uniform float uCryptBulge;
 uniform float uTrabeculaeLight;
 uniform float uTrabeculaeReach;
 uniform float uBandReach;
@@ -277,15 +278,19 @@ float fibreStreaks(float t, float w, float cellsT, float seed, float wave, float
     return pow(ridge, uFibreSharpness);
 }
 
-float stromalFibres(float t, float w, float offset) {
+/* deflect and crowd come from the web: the fibres are sampled where the openings have
+   pushed them to, and their light scales with how densely they lie, so an opening's rim is
+   bright because the collagen is bunched there and its floor is sparse. */
+float stromalFibres(float t, float w, float offset, float deflect, float crowd) {
     float pupillary = 1.0 - smoothstep(-0.03, 0.03, offset);
     float fade = 1.0 - uFibreFade * smoothstep(0.3, 0.9, w);
     // One wander for both scales: the fine fibres ride the bundles they are part of, and
     // ripple on a shorter wave of their own, so they cross and rejoin rather than comb.
     float wave = fibreWave(t, w, 44.0);
     float ripple = irisFbm(vec2(t * 96.0, w * 5.0), 96.0, 45.0) - 0.5;
-    float fine = fibreStreaks(t, w, FIBRE_FINE, 41.0, wave + 0.7 * ripple, uFibreWave);
-    float bundles = fibreStreaks(t, w, FIBRE_BUNDLES, 43.0, wave, uFibreWave);
+    float tf = t - deflect;
+    float fine = fibreStreaks(tf, w, FIBRE_FINE, 41.0, wave + 0.7 * ripple, uFibreWave) * crowd;
+    float bundles = fibreStreaks(tf, w, FIBRE_BUNDLES, 43.0, wave, uFibreWave) * crowd;
     // Bundles are patchy: brighter and thicker here, thinner there, along and across.
     float patchy = 0.5 + irisFbm(vec2(t * 48.0, w * 3.0), 48.0, 47.0);
     // The pupillary zone is patchy by sector too, some sectors pale and dense, others thin
@@ -412,11 +417,26 @@ float cryptOpen(float ring, float column, float columns) {
     return step(hash21(vec2(mod(column, columns), ring) + 3.0 * NET_SEED), fraction * uCryptFraction);
 }
 
-/* Returns the trabeculae in x and the crypt depth in y. */
-vec2 trabeculaeAndCrypts(float t, float w, float outward) {
+/* The flow of the fibres around an opening. Bundles that would pass through an open cell are
+   displaced to either side of its seed, crowd there and rejoin beyond it: a bump along the
+   arc, zero at the seed, peaking at about the cell's half width and gone by twice that, with
+   a radial envelope the cell's height. Returns the displacement along the arc in x and its
+   derivative in y, in disc radii, for the point at (dx, dy) from the seed. */
+vec2 cryptFlow(vec2 d, float rx, float ry) {
+    float u = d.x / rx;
+    float bump = exp(-u * u) * exp(-(d.y * d.y) / (ry * ry));
+    float shift = uCryptBulge * rx * u * bump;
+    float slope = uCryptBulge * (1.0 - 2.0 * u * u) * bump;
+    return vec2(shift, slope);
+}
+
+/* Returns the trabeculae in x, the crypt depth in y, the fibres' deflection around the
+   openings in z as a turn, and their crowding in w: 1 where the fibres are undisturbed,
+   above it where they bunch beside an opening, below it where they part over one. */
+vec4 trabeculaeAndCrypts(float t, float w, float outward) {
     // The web fades out by its reach and stops one ring inside the wreath: skip the rest.
     if (outward > uTrabeculaeReach + 0.12 || outward < -(NET_RINGS_IN + 0.5) * uCryptRing / 1.6) {
-        return vec2(0.0);
+        return vec4(0.0, 0.0, 0.0, 1.0);
     }
 
     float r = REST_PUPIL + w * (1.0 - REST_PUPIL);
@@ -458,15 +478,23 @@ vec2 trabeculaeAndCrypts(float t, float w, float outward) {
     float nearest = 1e9;
     float widthHere = 0.7 + 0.6 * irisFbm(vec2(t * 120.0, w * 6.0), 120.0, 59.0);
     float ownerHash = netSeedHash(owner, ownerColumn, netColumns(owner));
+    // The flow: every open seed in the window pushes the fibres, the owner's included.
+    vec2 flow = vec2(0.0);
+    float ry = 0.5 * uCryptRing * (1.0 - REST_PUPIL);
     for (float dj = -1.0; dj <= 1.0; dj += 1.0) {
         float j = owner + dj;
         float columns = netColumns(j);
         float column = floor(t * columns);
         float width = netWallWidth(owner, j) * widthHere;
+        float rx = PI * r / columns;
         for (float dc = -3.0; dc <= 3.0; dc += 1.0) {
             vec2 rr = netSeedOffset(j, column + dc, columns, t, outward, r);
+            if (rr.x > 5e2) continue;
+            if (j >= -NET_RINGS_IN && cryptOpen(j, column + dc, columns) > 0.5) {
+                flow += cryptFlow(-rr, rx, ry);
+            }
             vec2 diff = rr - mr;
-            if (dot(diff, diff) < 1e-8 || rr.x > 5e2) continue;
+            if (dot(diff, diff) < 1e-8) continue;
             float d = dot(0.5 * (mr + rr), normalize(diff));
             nearest = min(nearest, d);
             if (width <= 0.0) continue;
@@ -484,7 +512,11 @@ vec2 trabeculaeAndCrypts(float t, float w, float outward) {
     float inside = owner < -NET_RINGS_IN ? 0.0 : 1.0;
     float open = cryptOpen(owner, ownerColumn, netColumns(owner)) * inside;
     float crypt = open * smoothstep(0.0, uCryptFeather, nearest) * reach;
-    return vec2(strand * reach * inside, crypt);
+    // The displacement as a turn at this radius; the crowding is 1 less the slope, since
+    // the picture at t shows the fibre that was displaced to it.
+    float deflect = flow.x * reach / (2.0 * PI * r);
+    float crowd = max(1.0 - flow.y * reach, 0.1);
+    return vec4(strand * reach * inside, crypt, deflect, crowd);
 }
 
 /* ======================= periphery ======================= */
@@ -647,7 +679,7 @@ vec2 pigment(float t, float w) {
    pattern, so their relief does not deepen with the pupil; only their darkness does. */
 float relief(float fibres, float wreath, vec2 net, float furrows, float creases) {
     float ridge = wreath / max(uCollaretteLight, 1e-3);
-    float height = 0.5 + 0.15 * fibres + 0.2 * ridge + 0.35 * net.x - 0.5 * net.y
+    float height = 0.5 + 0.15 * fibres + 0.2 * ridge + 0.15 * net.x - 0.5 * net.y
                  - 0.25 * furrows - 0.2 * creases;
     return saturate(height);
 }
@@ -670,10 +702,10 @@ void main() {
 
     float offset = w - collarettePath(ray.t);
 
-    vec2 net = trabeculaeAndCrypts(ray.t, w, w - collaretteMean(ray.t));
+    vec4 net = trabeculaeAndCrypts(ray.t, w, w - collaretteMean(ray.t));
     // Strands brighten and fade along their length.
     float along = 0.5 + 0.7 * irisFbm(vec2(ray.t * 90.0, w * 4.0), 90.0, 61.0);
-    float fibres = stromalFibres(ray.t, w, offset);
+    float fibres = stromalFibres(ray.t, w, offset, net.z, net.w);
     float wreath = collaretteWreath(ray.t, w, offset);
     vec2 melanin = pigment(ray.t, w);
     float tissue = 0.5 + fibres + wreath
@@ -685,7 +717,7 @@ void main() {
 
     float furrows = contractionFurrows(ray.t, w);
     float creases = radialFurrows(ray.t, w, offset);
-    outDynamics = vec4(furrows, creases, relief(fibres, wreath, net, furrows, creases), 1.0);
+    outDynamics = vec4(furrows, creases, relief(fibres, wreath, net.xy, furrows, creases), 1.0);
 }
 `;
 
@@ -901,7 +933,8 @@ export const IRIS_DEFAULTS = {
   uCryptFraction: 1, // scales the fraction of cells that are open crypts
   uCryptFeather: 0.05, // how far into a crypt the darkening takes to reach full depth, in disc radii
   uCryptDepth: 0.7, // how much epithelium shows at a crypt's floor; below 1 keeps fibres in view
-  uTrabeculaeLight: 0.35, // how far the trabeculae lighten the tissue
+  uCryptBulge: 0.7, // how far an opening pushes the fibres aside, as a fraction of its cell's half width
+  uTrabeculaeLight: 0.2, // how far the drawn bundle core lightens the tissue; the bunched fibres do the rest
   uTrabeculaeReach: 0.45, // how far outward from the wreath the web fades out, in width
   uBandReach: 0.4, // how far in from the root the pale band reaches at its widest, in width
   uBandSoftness: 0.08, // the base softness of its inner edge, in width; varies around this
@@ -960,6 +993,7 @@ export const IRIS_BAKE_KEYS = [
   'uCryptFraction',
   'uCryptFeather',
   'uCryptDepth',
+  'uCryptBulge',
   'uTrabeculaeLight',
   'uTrabeculaeReach',
   'uBandReach',
