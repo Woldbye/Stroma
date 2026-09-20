@@ -521,11 +521,11 @@ float radialFurrows(float t, float w, float outward) {
         vec2 h2 = hash22(vec2(c, 137.0));
         // A channel several bundles wide, its own width per ray, widening toward the root
         // as the bundles spread, soft to the edge: a valley between ridges, not a line.
-        float width = CREASE_WIDTH * (0.6 + 0.8 * h2.x) * (0.7 + 0.6 * outward);
+        float width = CREASE_WIDTH * (0.35 + 1.3 * h2.x) * (0.7 + 0.6 * outward);
         float across = exp(-(arc * arc) / (width * width));
-        // From just outside the wreath to its own end, most reaching the root.
+        // From just outside the wreath to its own end, anywhere from mid zone to the root.
         float start = 0.03 + 0.08 * hash21(vec2(c, 141.0));
-        float end = 0.55 + 0.45 * h2.y;
+        float end = 0.3 + 0.75 * h2.y * h2.y;
         float along = smoothstep(start, start + 0.08, outward) * (1.0 - smoothstep(end - 0.12, end, outward));
         float vary = 0.6 + 0.4 * irisNoise(vec2(c, w * 6.0), CREASE_SLOTS, 139.0);
         depth = max(depth, across * along * vary);
