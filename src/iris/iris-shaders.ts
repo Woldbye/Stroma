@@ -124,6 +124,8 @@ uniform float uFibreFine;
 uniform float uFibreFade;
 uniform float uFibreWave;
 uniform float uFibreSharpness;
+uniform float uCollaretteWidth;
+uniform float uCollaretteLight;
 ${COORDINATES}
 /* ======================= primitives ======================= */
 
@@ -254,6 +256,24 @@ float stromalFibres(float t, float w, float offset) {
     return uFibreContrast * (light - 0.35);
 }
 
+/* The collarette: the wreath, the thickest tissue of the iris, sitting on its path. A soft
+   ridge across the offset whose width and brightness vary around the turn, so it thickens,
+   thins and breaks; made of fibre-scale noise so it reads as bunched tissue rather than a
+   stroke laid on the fibres beneath it. */
+#define COLLARETTE_WIDTH_CELLS 36.0
+#define COLLARETTE_LIGHT_CELLS 20.0
+
+float collaretteWreath(float t, float w, float offset) {
+    float width = uCollaretteWidth * (0.6 + 0.8 * turnNoise(t, COLLARETTE_WIDTH_CELLS, 23.0));
+    // Asymmetric: the inner flank blends into the pupillary zone, the outer is sharper
+    // where the crypts begin.
+    float sigma = offset < 0.0 ? width * 0.7 : width * 0.35;
+    float ridge = exp(-(offset * offset) / (2.0 * sigma * sigma));
+    float along = 0.3 + 1.2 * turnNoise(t, COLLARETTE_LIGHT_CELLS, 29.0);
+    float grain = 0.6 + 0.6 * irisFbm(vec2(t * 240.0, w * 8.0), 240.0, 53.0);
+    return uCollaretteLight * ridge * along * grain;
+}
+
 /* ======================= composition ======================= */
 
 void main() {
@@ -262,7 +282,7 @@ void main() {
     float w = widthOf(ray, REST_PUPIL);
     float offset = w - collarettePath(ray.t);
 
-    float tissue = 0.5 + stromalFibres(ray.t, w, offset);
+    float tissue = 0.5 + stromalFibres(ray.t, w, offset) + collaretteWreath(ray.t, w, offset);
     float opening = pupillaryRuff(w, ray.t);
     float zone = encodeOffset(offset);
     float pigment = 0.0;
@@ -390,8 +410,10 @@ export const IRIS_DEFAULTS = {
   uFibreFade: 0.5, // how much the bundles fade by the root; 1 loses them by mid width
   uFibreWave: 0.6, // how far the streaks wander around the circle, in fibre spacings
   uFibreSharpness: 4, // how narrow the bright cores are; higher is thinner streaks
+  uCollaretteWidth: 0.07, // the wreath's visible width in width units, about 0.3 mm
+  uCollaretteLight: 0.3, // how far the wreath lightens the tissue on its crest
   // The palette: band-iris by default, the other presets in iris-palettes.ts.
-  uPupillaryColor: [0.58, 0.64, 0.7],
+  uPupillaryColor: [0.5, 0.57, 0.64],
   uCiliaryColor: [0.28, 0.45, 0.62],
   uCollaretteColor: [0.8, 0.85, 0.9],
   uCollaretteTint: 0, // how strongly the collarette's own colour shows; 0 leaves it as tissue
@@ -417,4 +439,6 @@ export const IRIS_BAKE_KEYS = [
   'uFibreFade',
   'uFibreWave',
   'uFibreSharpness',
+  'uCollaretteWidth',
+  'uCollaretteLight',
 ] as const satisfies readonly (keyof typeof IRIS_DEFAULTS)[];

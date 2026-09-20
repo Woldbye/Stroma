@@ -16,7 +16,7 @@ export const IRIS_PALETTES = {
      pale tissue as the trabeculae, a dark blue-grey limbal ring, a fine ruff with almost no
      shadow. */
   'band-iris': {
-    uPupillaryColor: [0.58, 0.64, 0.7],
+    uPupillaryColor: [0.5, 0.57, 0.64],
     uCiliaryColor: [0.28, 0.45, 0.62],
     uCollaretteColor: [0.8, 0.85, 0.9],
     uCollaretteTint: 0,
@@ -24,6 +24,7 @@ export const IRIS_PALETTES = {
     uLimbalColor: [0.1, 0.14, 0.2],
     uEpitheliumColor: [0.22, 0.13, 0.09],
     uRuffShade: 0.02,
+    uTissueWhiten: 0.8,
   },
   /* Central heterochromia: an amber pupillary zone, a rusty collarette bleeding outward, a
      blue-grey ciliary zone, a soft grey limbus, and a deep margin shadow. */
@@ -36,6 +37,7 @@ export const IRIS_PALETTES = {
     uLimbalColor: [0.28, 0.3, 0.32],
     uEpitheliumColor: [0.16, 0.09, 0.05],
     uRuffShade: 0.08,
+    uTissueWhiten: 0.5,
   },
   /* Pale grey-white pupillary zone, a deep blue ciliary zone, a thin dark limbus, almost no
      ruff. */
@@ -48,6 +50,7 @@ export const IRIS_PALETTES = {
     uLimbalColor: [0.1, 0.16, 0.26],
     uEpitheliumColor: [0.12, 0.1, 0.12],
     uRuffShade: 0.01,
+    uTissueWhiten: 0.8,
   },
 } as const satisfies Record<string, Palette>;
 
