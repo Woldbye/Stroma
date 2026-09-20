@@ -141,6 +141,7 @@ uniform float uBandReach;
 uniform float uBandSoftness;
 uniform float uBandBite;
 uniform float uBandLight;
+uniform float uFurrowCount;
 uniform float uFurrowInner;
 uniform float uFurrowOuter;
 uniform float uFurrowWidth;
@@ -511,28 +512,35 @@ float peripheralBand(float t, float w, float fibres) {
 
 /* ======================= furrows ======================= */
 
-/* The contraction furrows: concentric folds in the outer ciliary zone where the tissue
-   bunches as the pupil dilates. A few of them between the inner and outer bounds, each an
-   arc rather than a full circle, present where a slow noise says so, wobbling a little in
-   width and varying in depth along its length, soft across. Baked at their pattern; the
-   present pass deepens them with dilation. */
-#define FURROW_COUNT 3.0
+/* The contraction furrows: the concentric folds of the ciliary zone, the rings of a tree
+   trunk, where the tissue bunches as the pupil dilates. Their number rises with age, a few
+   in a young iris and a dozen in an old one, so the count is a knob. They lie across the
+   outer half of the zone, spaced unevenly and densest a millimetre or so in from the root.
+   All of them ride one slow wobble, as contour lines do, each with a small wobble of its
+   own; each is a ring with breaks, fading out for a stretch here and there, varying in depth
+   along its length, soft across and narrower when there are many. Baked at their pattern;
+   the present pass deepens them with dilation. */
+#define FURROW_MAX 12.0
 
 float contractionFurrows(float t, float w) {
+    float count = clamp(floor(uFurrowCount + 0.5), 0.0, FURROW_MAX);
+    float spacing = (uFurrowOuter - uFurrowInner) / max(count, 1.0);
+    float shared = (turnNoise(t, 5.0, 90.0) - 0.5) * 0.05;
     float depth = 0.0;
-    for (float i = 0.0; i < FURROW_COUNT; i += 1.0) {
+    for (float i = 0.0; i < FURROW_MAX; i += 1.0) {
+        if (i >= count) break;
         float seed = 91.0 + i * 7.0;
-        // Each fold wanders in width, so no two are concentric circles.
-        float wobble = (turnNoise(t, 5.0, seed) - 0.5) * 0.08
-                     + (turnNoise(t, 40.0, seed + 3.0) - 0.5) * 0.012;
-        float at = mix(uFurrowInner, uFurrowOuter, (i + 0.5) / FURROW_COUNT) + wobble;
-        // Arcs, not rings: present for a third of the turn or less, fading in and out.
-        float presence = smoothstep(0.5, 0.75, turnNoise(t, 5.0, seed + 1.0));
-        float along = 0.5 + 0.5 * turnNoise(t, 14.0, seed + 2.0);
-        float width = uFurrowWidth * (0.7 + 0.6 * turnNoise(t, 11.0, seed + 4.0));
-        // A fold, not a line: soft to the centre.
-        float line = 1.0 - smoothstep(0.0, width, abs(w - at));
-        line *= line;
+        // Its own place within its slot, the slots narrowing toward the root.
+        float u = (i + 0.15 + 0.7 * hash21(vec2(i, 89.0))) / count;
+        float at = mix(uFurrowInner, uFurrowOuter, sqrt(u)) + shared
+                 + (turnNoise(t, 40.0, seed + 3.0) - 0.5) * 0.3 * spacing;
+        // A ring with breaks: present most of the way round, gone for a stretch or two.
+        float presence = smoothstep(0.15, 0.4, turnNoise(t, 7.0, seed + 1.0));
+        float along = 0.4 + 0.6 * turnNoise(t, 14.0, seed + 2.0);
+        float width = min(uFurrowWidth, 0.5 * spacing) * (0.6 + 0.8 * turnNoise(t, 11.0, seed + 4.0));
+        // A fold, not a line: a Gaussian valley, soft to its edges.
+        float d = (w - at) / width;
+        float line = exp(-2.0 * d * d);
         depth = max(depth, line * presence * along);
     }
     return depth;
@@ -859,10 +867,11 @@ export const IRIS_DEFAULTS = {
   uBandSoftness: 0.08, // the base softness of its inner edge, in width; varies around this
   uBandBite: 0.15, // how far bright fibres push the band's edge outward
   uBandLight: 0.45, // how far the band lightens the tissue
-  uFurrowInner: 0.65, // the innermost contraction furrow, in width: 1.5 mm from the root
-  uFurrowOuter: 0.78, // the outermost, 1 mm from the root
-  uFurrowWidth: 0.035, // a furrow's soft half-width in width, about 0.15 mm
-  uFurrowRest: 0.14, // the contraction furrows' depth at the rest pupil (present-only)
+  uFurrowCount: 6, // how many contraction furrows, rising with age: a few when young, a dozen when old
+  uFurrowInner: 0.5, // the innermost contraction furrow, in width: 2 mm from the root
+  uFurrowOuter: 0.88, // the outermost, half a millimetre from the root
+  uFurrowWidth: 0.035, // a furrow's soft half-width in width, about 0.15 mm; narrower when crowded
+  uFurrowRest: 0.18, // the contraction furrows' depth at the rest pupil (present-only)
   uFurrowDeepen: 0.5, // how much deeper they are at full dilation (present-only)
   uCreaseRest: 0.25, // the radial furrows' depth at rest (present-only)
   uCreaseOpen: 0.35, // how much more they open at full constriction (present-only)
@@ -915,6 +924,7 @@ export const IRIS_BAKE_KEYS = [
   'uBandSoftness',
   'uBandBite',
   'uBandLight',
+  'uFurrowCount',
   'uFurrowInner',
   'uFurrowOuter',
   'uFurrowWidth',
