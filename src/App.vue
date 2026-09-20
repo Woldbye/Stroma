@@ -1,11 +1,17 @@
 <script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import IrisDemo from '@/demo/IrisDemo.vue';
 import IrisHarness from '@/dev/IrisHarness.vue';
 
-/* While the model is being built the harness is the app: the iris at a chosen size, the
-   pupil under a slider, timings and a pixel difference against a pinned render. A demo page
-   and the component come once the layers are in. */
+/* The demo is the app; the harness, the bench the model is built on, sits at #harness. */
+const hash = ref(location.hash);
+const onHashChange = () => (hash.value = location.hash);
+onMounted(() => addEventListener('hashchange', onHashChange));
+onBeforeUnmount(() => removeEventListener('hashchange', onHashChange));
+
+const page = computed(() => (hash.value === '#harness' ? IrisHarness : IrisDemo));
 </script>
 
 <template>
-  <IrisHarness />
+  <component :is="page" />
 </template>

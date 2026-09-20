@@ -810,7 +810,7 @@ export const IRIS_DEFAULTS = {
   uLimbusStart: 0.9, // where the limbal darkening begins, in width
   uEpitheliumColor: [0.22, 0.13, 0.09], // the pigment epithelium, seen through every opening
   uTissueWhiten: 0.8, // how far the brightest tissue goes toward white
-  uDebug: 1, // the coordinate lines; 0 hides them
+  uDebug: 0, // the coordinate overlay; 1 shows it
 } as const;
 
 /** Knobs the bake reads; a change to any of them re-bakes. The rest are present-only. */
