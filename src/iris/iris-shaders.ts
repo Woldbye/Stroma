@@ -814,15 +814,15 @@ float furrowLayer(float opening, vec4 dynamics) {
 /* The relief, lit: the baked height's gradient, taken over a fixed step in the bake so the
    slopes do not change with the canvas size, gives a surface normal; a fixed light from the
    upper left lights the flank of every bundle facing it and shades the one turned away, and
-   darkens the rim of every pit. Returns a factor on the colour, 1 on flat tissue. */
+   darkens the rim of every pit. Forward differences from the height already sampled, two
+   reads rather than four: the gradient sits half a step off the pixel, under a texel at the
+   sizes an orb shows. Returns a factor on the colour, 1 on flat tissue. */
 #define RELIEF_STEP 0.003
 const vec3 RELIEF_LIGHT = normalize(vec3(-0.45, 0.55, 0.7));
 
-float reliefLayer(vec2 rest) {
-    float hx = texture(uIrisDynamics, rest + vec2(RELIEF_STEP, 0.0)).b
-             - texture(uIrisDynamics, rest - vec2(RELIEF_STEP, 0.0)).b;
-    float hy = texture(uIrisDynamics, rest + vec2(0.0, RELIEF_STEP)).b
-             - texture(uIrisDynamics, rest - vec2(0.0, RELIEF_STEP)).b;
+float reliefLayer(vec2 rest, float height) {
+    float hx = (texture(uIrisDynamics, rest + vec2(RELIEF_STEP, 0.0)).b - height) * 2.0;
+    float hy = (texture(uIrisDynamics, rest + vec2(0.0, RELIEF_STEP)).b - height) * 2.0;
     vec3 n = normalize(vec3(-hx * uReliefSlope, -hy * uReliefSlope, 1.0));
     float lit = dot(n, RELIEF_LIGHT) / RELIEF_LIGHT.z;
     return 1.0 + uReliefLight * (lit - 1.0);
@@ -866,7 +866,7 @@ void main() {
     zone.deep = pigmentLayer(zone.deep, structure.a) * 0.6;
     vec3 col = tissueLayer(zone, structure.r);
     col = openingLayer(col, zone, furrowLayer(structure.g, dynamics));
-    col *= reliefLayer(rest);
+    col *= reliefLayer(rest, dynamics.b);
     col = limbusLayer(col, w);
     col = mix(col, debugLayer(col, structure, dynamics, w, ray.t), uDebug);
     col = mix(col, uPupilColor, pupilMask(w));
