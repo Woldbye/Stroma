@@ -289,8 +289,8 @@ float stromalFibres(float t, float w, float offset, float deflect, float crowd) 
     float wave = fibreWave(t, w, 44.0);
     float ripple = irisFbm(vec2(t * 96.0, w * 5.0), 96.0, 45.0) - 0.5;
     float tf = t - deflect;
-    float fine = fibreStreaks(tf, w, FIBRE_FINE, 41.0, wave + 0.7 * ripple, uFibreWave) * crowd;
-    float bundles = fibreStreaks(tf, w, FIBRE_BUNDLES, 43.0, wave, uFibreWave) * crowd;
+    float fine = fibreStreaks(tf, w, FIBRE_FINE, 41.0, wave + 0.7 * ripple, uFibreWave);
+    float bundles = fibreStreaks(tf, w, FIBRE_BUNDLES, 43.0, wave, uFibreWave);
     // Bundles are patchy: brighter and thicker here, thinner there, along and across.
     float patchy = 0.5 + irisFbm(vec2(t * 48.0, w * 3.0), 48.0, 47.0);
     // The pupillary zone is patchy by sector too, some sectors pale and dense, others thin
@@ -302,7 +302,10 @@ float stromalFibres(float t, float w, float offset, float deflect, float crowd) 
     float gaps = smoothstep(0.55, 0.35, clump) * pupillary * smoothstep(0.06, 0.18, w);
     float light = fine * pupillary * uFibreFine * sectors
                 + bundles * patchy * mix(1.0, 0.6, pupillary) * fade;
-    return uFibreContrast * (light - 0.35) - uFibreGaps * gaps;
+    // Crowding scales the fibres' contrast about the tissue's tone, not their light, so
+    // bunched collagen is a stronger weave and parted collagen a flatter one, and the mean
+    // tone is untouched by the flow; the light's own end would clamp and drift it darker.
+    return uFibreContrast * (light - 0.35) * crowd - uFibreGaps * gaps;
 }
 
 /* The collarette: the wreath, the thickest tissue of the iris, sitting on its path. A soft
@@ -934,7 +937,7 @@ export const IRIS_DEFAULTS = {
   uCryptFeather: 0.05, // how far into a crypt the darkening takes to reach full depth, in disc radii
   uCryptDepth: 0.7, // how much epithelium shows at a crypt's floor; below 1 keeps fibres in view
   uCryptBulge: 0.7, // how far an opening pushes the fibres aside, as a fraction of its cell's half width
-  uTrabeculaeLight: 0.2, // how far the drawn bundle core lightens the tissue; the bunched fibres do the rest
+  uTrabeculaeLight: 0.3, // how far the drawn bundle core lightens the tissue; the bunched fibres add the weave
   uTrabeculaeReach: 0.45, // how far outward from the wreath the web fades out, in width
   uBandReach: 0.4, // how far in from the root the pale band reaches at its widest, in width
   uBandSoftness: 0.08, // the base softness of its inner edge, in width; varies around this
