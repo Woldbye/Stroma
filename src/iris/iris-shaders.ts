@@ -127,6 +127,7 @@ uniform float uFibreFine;
 uniform float uFibreFade;
 uniform float uFibreWave;
 uniform float uFibreSharpness;
+uniform float uFibreGaps;
 uniform float uCollaretteWidth;
 uniform float uCollaretteLight;
 uniform float uCryptRing;
@@ -278,14 +279,24 @@ float fibreStreaks(float t, float w, float cellsT, float seed, float wave, float
 float stromalFibres(float t, float w, float offset) {
     float pupillary = 1.0 - smoothstep(-0.03, 0.03, offset);
     float fade = 1.0 - uFibreFade * smoothstep(0.3, 0.9, w);
-    // One wander for both scales: the fine fibres ride the bundles they are part of.
+    // One wander for both scales: the fine fibres ride the bundles they are part of, and
+    // ripple on a shorter wave of their own, so they cross and rejoin rather than comb.
     float wave = fibreWave(t, w, 44.0);
-    float fine = fibreStreaks(t, w, FIBRE_FINE, 41.0, wave, uFibreWave);
+    float ripple = irisFbm(vec2(t * 96.0, w * 5.0), 96.0, 45.0) - 0.5;
+    float fine = fibreStreaks(t, w, FIBRE_FINE, 41.0, wave + 0.7 * ripple, uFibreWave);
     float bundles = fibreStreaks(t, w, FIBRE_BUNDLES, 43.0, wave, uFibreWave);
     // Bundles are patchy: brighter and thicker here, thinner there, along and across.
     float patchy = 0.5 + irisFbm(vec2(t * 48.0, w * 3.0), 48.0, 47.0);
-    float light = fine * pupillary * uFibreFine + bundles * patchy * mix(1.0, 0.6, pupillary) * fade;
-    return uFibreContrast * (light - 0.35);
+    // The pupillary zone is patchy by sector too, some sectors pale and dense, others thin
+    // and slate; and its fine fibres bunch into clumps, with gaps between them where the
+    // tissue thins over the sphincter and the zone's deep colour shows. The gaps stay clear
+    // of the margin and its frill.
+    float sectors = 0.3 + 1.4 * irisFbm(vec2(t * 14.0, w * 2.0), 14.0, 49.0);
+    float clump = irisFbm(vec2(t * 110.0 + wave * 2.0, w * 2.5), 110.0, 51.0);
+    float gaps = smoothstep(0.55, 0.35, clump) * pupillary * smoothstep(0.06, 0.18, w);
+    float light = fine * pupillary * uFibreFine * sectors
+                + bundles * patchy * mix(1.0, 0.6, pupillary) * fade;
+    return uFibreContrast * (light - 0.35) - uFibreGaps * gaps;
 }
 
 /* The collarette: the wreath, the thickest tissue of the iris, sitting on its path. A soft
@@ -834,6 +845,7 @@ export const IRIS_DEFAULTS = {
   uFibreFade: 0.5, // how much the bundles fade by the root; 1 loses them by mid width
   uFibreWave: 0.6, // how far the streaks wander around the circle, in fibre spacings
   uFibreSharpness: 4, // how narrow the bright cores are; higher is thinner streaks
+  uFibreGaps: 0.35, // how far the gaps between fibre clumps darken the pupillary zone
   uCollaretteWidth: 0.07, // the wreath's visible width in width units, about 0.3 mm
   uCollaretteLight: 0.3, // how far the wreath lightens the tissue on its crest
   uCryptRing: 0.2, // height of the ring of cells just outside the wreath, in width
@@ -889,6 +901,7 @@ export const IRIS_BAKE_KEYS = [
   'uFibreFade',
   'uFibreWave',
   'uFibreSharpness',
+  'uFibreGaps',
   'uCollaretteWidth',
   'uCollaretteLight',
   'uCryptRing',
