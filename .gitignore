@@ -23,5 +23,8 @@ coverage
 
 *.tsbuildinfo
 
-# Reference photos, kept out of the repo until the user says otherwise
+# Working notes, reference photos and agent instructions stay local
 inspiration/
+docs/
+CLAUDE.md
+.claude/

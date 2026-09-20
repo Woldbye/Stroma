@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue';
-import { Renderer } from 'ogl';
-import { createIrisScene, type IrisScene, type LookKey } from '@/iris/iris-scene';
+import { applyPalette, mountIris, runFrames, type IrisMount } from '@/iris/iris-mount';
 import { IRIS_PALETTES, type PaletteName } from '@/iris/iris-palettes';
 
 /* The demo: the iris alone on a dark page, as large as the viewport allows, its pupil under
@@ -15,71 +14,42 @@ const light = ref(1.7);
 
 const stage = useTemplateRef<HTMLDivElement>('stage');
 
-let renderer: Renderer | null = null;
-let iris: IrisScene | null = null;
+let mount: IrisMount | null = null;
 let observer: ResizeObserver | null = null;
-let rafId = 0;
-
-const applyPalette = (name: PaletteName) => {
-  for (const [key, value] of Object.entries(IRIS_PALETTES[name])) {
-    iris?.setLook(key as LookKey, value);
-  }
-};
+let stop = () => {};
 
 onMounted(() => {
   const el = stage.value;
   if (!el) return;
 
-  renderer = new Renderer({
-    webgl: 2,
-    alpha: true,
-    premultipliedAlpha: true,
-    antialias: true,
-    dpr: window.devicePixelRatio || 1,
-  });
-  el.appendChild(renderer.gl.canvas);
-
-  iris = createIrisScene(renderer);
-  iris.setLook('uDebug', 0);
+  mount = mountIris(el);
+  const { iris } = mount;
   iris.setReflex(true, light.value);
   iris.setHippus(true);
-  // The scene on the window, so a script can drive frames while the tab is hidden.
-  (window as unknown as { stroma?: { iris: IrisScene; renderer: Renderer } }).stroma = {
-    iris,
-    renderer,
-  };
 
   // The iris fills the shorter side of the stage and re-bakes when that changes.
   const fit = () => {
     const size = Math.floor(Math.min(el.clientWidth, el.clientHeight));
-    if (size <= 0 || !renderer || !iris) return;
-    renderer.setSize(size, size);
-    iris.resized();
+    if (size > 0) mount?.resize(size);
   };
   fit();
   observer = new ResizeObserver(fit);
   observer.observe(el);
 
-  let last = 0;
-  const loop = (t: number) => {
-    rafId = requestAnimationFrame(loop);
-    const dt = last === 0 ? 0 : Math.min((t - last) * 0.001, 0.05);
-    last = t;
-    if (!iris) return;
+  stop = runFrames((dt) => {
     // Hippus keeps the reflex from resting, so this draws every frame; a still eye would skip.
     if (iris.tick(dt, false)) return;
     iris.render();
-  };
-  rafId = requestAnimationFrame(loop);
+  });
 });
 
-watch(palette, applyPalette);
-watch(light, (v) => iris?.setLight(v));
+watch(palette, (name) => mount && applyPalette(mount.iris, name));
+watch(light, (v) => mount?.iris.setLight(v));
 
 onBeforeUnmount(() => {
-  cancelAnimationFrame(rafId);
+  stop();
   observer?.disconnect();
-  renderer?.gl.getExtension('WEBGL_lose_context')?.loseContext();
+  mount?.dispose();
 });
 </script>
 

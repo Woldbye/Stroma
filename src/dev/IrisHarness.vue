@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue';
-import { Renderer } from 'ogl';
-import { createIrisScene, type IrisScene } from '@/iris/iris-scene';
+import { applyPalette, mountIris, runFrames, type IrisMount } from '@/iris/iris-mount';
 import { IRIS_DEFAULTS } from '@/iris/iris-shaders';
 import { IRIS_PALETTES, type PaletteName } from '@/iris/iris-palettes';
 import { createGpuTimer, measureWall, type GpuTimer } from './gpu-timer';
@@ -80,9 +79,9 @@ const savePin = (pin: Pin | null) => {
 };
 
 function pinCurrent() {
-  if (!renderer || !iris) return;
-  const gl = renderer.gl as WebGL2RenderingContext;
-  iris.render();
+  if (!mount) return;
+  const gl = mount.renderer.gl as WebGL2RenderingContext;
+  mount.iris.render();
   const pin = { width: gl.canvas.width, height: gl.canvas.height, data: readPixels(gl) };
   pinned.value = pin;
   savePin(pin);
@@ -93,26 +92,24 @@ function unpin() {
   savePin(null);
 }
 
-let renderer: Renderer | null = null;
-let iris: IrisScene | null = null;
+let mount: IrisMount | null = null;
 let timer: GpuTimer | null = null;
-let rafId = 0;
+let stop = () => {};
 
 // Rolling mean of the last measurements, so the readout holds still enough to read.
 const GPU_WINDOW = 60;
 const gpuSamples: number[] = [];
 
 const applySize = () => {
-  if (!renderer || !iris) return;
-  renderer.setSize(size.value, size.value);
-  iris.resized();
+  mount?.resize(size.value);
   gpuSamples.length = 0;
   diffMean.value = diffMax.value = diffOver.value = null;
 };
 
 function measure() {
-  if (!renderer || !iris) return;
-  const gl = renderer.gl as WebGL2RenderingContext;
+  if (!mount) return;
+  const { iris } = mount;
+  const gl = mount.renderer.gl as WebGL2RenderingContext;
 
   /* Best of several rounds: GPU clocks and other tabs swing single rounds by tens of percent,
      the floor is stable. */
@@ -127,10 +124,10 @@ function measure() {
   iris.tick(1, true);
 
   // The steady-state frame first, then a frame that also re-bakes.
-  wallMs.value = best(() => iris!.render());
+  wallMs.value = best(() => iris.render());
   bakeMs.value = best(() => {
-    iris!.invalidate();
-    iris!.render();
+    iris.invalidate();
+    iris.render();
   });
 
   const { width, height } = gl.canvas;
@@ -157,69 +154,47 @@ onMounted(() => {
   const el = irisContainer.value;
   if (!el) return;
 
-  renderer = new Renderer({
-    webgl: 2,
-    alpha: true,
-    premultipliedAlpha: true,
-    antialias: true,
-    dpr,
-  });
-  el.appendChild(renderer.gl.canvas);
-
-  iris = createIrisScene(renderer, { fadeInMs: 0 });
-  // The scene on the window, so a script can drive frames while the tab is hidden.
-  (window as unknown as { stroma?: { iris: IrisScene; renderer: Renderer } }).stroma = {
-    iris,
-    renderer,
-  };
-  timer = createGpuTimer(renderer.gl as WebGL2RenderingContext);
-  timerSupported.value = timer.supported;
+  mount = mountIris(el, { fadeInMs: 0 });
+  const { iris } = mount;
+  const gpuTimer = createGpuTimer(mount.renderer.gl as WebGL2RenderingContext);
+  timer = gpuTimer;
+  timerSupported.value = gpuTimer.supported;
   pinned.value = loadPin();
   applySize();
 
-  let last = 0;
-  const loop = (t: number) => {
-    rafId = requestAnimationFrame(loop);
-    const dt = last === 0 ? 0 : Math.min((t - last) * 0.001, 0.05);
-    last = t;
-    if (!iris || !timer) return;
+  stop = runFrames((dt) => {
     // Always draw: the harness measures the frame cost, not the settle check.
     iris.tick(dt, true);
     if (reflex.value) pupil.value = Math.round(iris.pupilRadius() * 1000) / 1000;
-    timer.begin();
+    gpuTimer.begin();
     iris.render();
-    timer.end();
-    const ms = timer.poll();
+    gpuTimer.end();
+    const ms = gpuTimer.poll();
     if (ms !== null) {
       gpuSamples.push(ms);
       if (gpuSamples.length > GPU_WINDOW) gpuSamples.shift();
       gpuMs.value = gpuSamples.reduce((s, v) => s + v, 0) / gpuSamples.length;
     }
-    timerDebug.value = timer.debug();
-  };
-  rafId = requestAnimationFrame(loop);
+    timerDebug.value = gpuTimer.debug();
+  });
   document.addEventListener('visibilitychange', onVisibility);
 });
 
 watch(size, applySize);
 watch(pupil, (v) => {
-  if (!reflex.value) iris?.setLook('uPupil', v);
+  if (!reflex.value) mount?.iris.setLook('uPupil', v);
 });
-watch(reflex, (v) => iris?.setReflex(v, light.value));
-watch(light, (v) => iris?.setLight(v));
-watch(hippus, (v) => iris?.setHippus(v));
-watch(debug, (v) => iris?.setLook('uDebug', v ? 1 : 0));
-watch(palette, (name) => {
-  for (const [key, value] of Object.entries(IRIS_PALETTES[name])) {
-    iris?.setLook(key as keyof typeof IRIS_DEFAULTS, value);
-  }
-});
+watch(reflex, (v) => mount?.iris.setReflex(v, light.value));
+watch(light, (v) => mount?.iris.setLight(v));
+watch(hippus, (v) => mount?.iris.setHippus(v));
+watch(debug, (v) => mount?.iris.setLook('uDebug', v ? 1 : 0));
+watch(palette, (name) => mount && applyPalette(mount.iris, name));
 
 onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onVisibility);
-  cancelAnimationFrame(rafId);
+  stop();
   timer?.dispose();
-  renderer?.gl.getExtension('WEBGL_lose_context')?.loseContext();
+  mount?.dispose();
 });
 
 const fmt = (v: number | null, digits = 2) => (v === null ? '–' : v.toFixed(digits));

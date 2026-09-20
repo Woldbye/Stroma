@@ -19,8 +19,8 @@
     "lint:check:oxlint": "oxlint . -D correctness",
     "lint:check:eslint": "eslint .",
     "lint:check": "run-s lint:check:oxlint lint:check:eslint",
-    "format": "prettier --write \"{src,docs}/**/*.{ts,vue,css,json,md}\" \"*.md\"",
-    "format:check": "prettier --check \"{src,docs}/**/*.{ts,vue,css,json,md}\" \"*.md\""
+    "format": "prettier --write \"src/**/*.{ts,vue,css,json}\" \"*.md\"",
+    "format:check": "prettier --check \"src/**/*.{ts,vue,css,json}\" \"*.md\""
   },
   "dependencies": {
     "ogl": "^1.0.11",
