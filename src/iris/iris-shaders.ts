@@ -503,7 +503,7 @@ float contractionFurrows(float t, float w) {
    constriction. */
 #define CREASE_SLOTS 72.0
 #define CREASE_FRACTION 0.4
-#define CREASE_WIDTH 0.006
+#define CREASE_WIDTH 0.022
 
 float radialFurrows(float t, float w, float outward) {
     float r = REST_PUPIL + w * (1.0 - REST_PUPIL);
@@ -518,13 +518,16 @@ float radialFurrows(float t, float w, float outward) {
         float dt = t - rayT;
         dt -= floor(dt + 0.5);
         float arc = abs(dt) * 2.0 * PI * r;
-        float across = 1.0 - smoothstep(0.0, CREASE_WIDTH, arc);
-        // From just outside the wreath to its own end, somewhere between mid zone and root.
         vec2 h2 = hash22(vec2(c, 137.0));
-        float start = 0.03 + 0.08 * h2.x;
-        float end = 0.35 + 0.35 * h2.y;
-        float along = smoothstep(start, start + 0.06, outward) * (1.0 - smoothstep(end - 0.08, end, outward));
-        float vary = 0.5 + 0.5 * irisNoise(vec2(c, w * 10.0), CREASE_SLOTS, 139.0);
+        // A channel several bundles wide, its own width per ray, widening toward the root
+        // as the bundles spread, soft to the edge: a valley between ridges, not a line.
+        float width = CREASE_WIDTH * (0.6 + 0.8 * h2.x) * (0.7 + 0.6 * outward);
+        float across = exp(-(arc * arc) / (width * width));
+        // From just outside the wreath to its own end, most reaching the root.
+        float start = 0.03 + 0.08 * hash21(vec2(c, 141.0));
+        float end = 0.55 + 0.45 * h2.y;
+        float along = smoothstep(start, start + 0.08, outward) * (1.0 - smoothstep(end - 0.12, end, outward));
+        float vary = 0.6 + 0.4 * irisNoise(vec2(c, w * 6.0), CREASE_SLOTS, 139.0);
         depth = max(depth, across * along * vary);
     }
     return depth;
@@ -815,8 +818,8 @@ export const IRIS_DEFAULTS = {
   uFurrowWidth: 0.035, // a furrow's soft half-width in width, about 0.15 mm
   uFurrowRest: 0.2, // the contraction furrows' depth at the rest pupil (present-only)
   uFurrowDeepen: 0.6, // how much deeper they are at full dilation (present-only)
-  uCreaseRest: 0.3, // the radial furrows' depth at rest (present-only)
-  uCreaseOpen: 0.5, // how much more they open at full constriction (present-only)
+  uCreaseRest: 0.35, // the radial furrows' depth at rest (present-only)
+  uCreaseOpen: 0.4, // how much more they open at full constriction (present-only)
   uPigmentPatches: 0, // the amber patches' strength; band-iris has none
   uPatchZone: 1, // where the patches lie: 0 toward the pupil, 1 toward the periphery
   uPigmentFreckles: 0.3, // the freckles' density, 1 for a well-freckled iris
