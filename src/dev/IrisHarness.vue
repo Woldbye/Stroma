@@ -168,7 +168,10 @@ onMounted(() => {
 
   iris = createIrisScene(renderer, { fadeInMs: 0 });
   // The scene on the window, so a script can drive frames while the tab is hidden.
-  (window as unknown as { stroma?: { iris: IrisScene } }).stroma = { iris };
+  (window as unknown as { stroma?: { iris: IrisScene; renderer: Renderer } }).stroma = {
+    iris,
+    renderer,
+  };
   timer = createGpuTimer(renderer.gl as WebGL2RenderingContext);
   timerSupported.value = timer.supported;
   pinned.value = loadPin();

@@ -595,7 +595,9 @@ uniform float uCreaseOpen;
 
 /* ---- palette ---- */
 uniform vec3 uPupillaryColor;
+uniform vec3 uPupillaryDeep;
 uniform vec3 uCiliaryColor;
+uniform vec3 uCiliaryDeep;
 uniform vec3 uCollaretteColor;
 uniform float uCollaretteTint;
 uniform float uCollaretteBleed;
@@ -622,12 +624,25 @@ float isoline(float x) {
 
 /* The zone base tones: the pupillary zone inside the collarette's path, the ciliary zone
    outside, and the collarette's own colour strongest on the path and bleeding outward along
-   the tissue. Smooth fields; every texture above them is tissue or opening. */
-vec3 zoneTones(float offset) {
+   the tissue. Smooth fields; every texture above them is tissue or opening. Each zone has
+   two colours: its tone where the tissue is of ordinary thickness, and its deep colour where
+   the tissue is thin over the dark epithelium. In a blue eye the deep colour is a saturated
+   cobalt, since thin stroma scatters blue over the dark ground, and in an amber zone it is
+   brown-orange; so colour runs from deep through the tone to white, not from grey to white. */
+struct Zone {
+    vec3 tone;
+    vec3 deep;
+};
+
+Zone zoneTones(float offset) {
     float pupillary = 1.0 - smoothstep(-0.02, 0.02, offset);
-    vec3 col = mix(uCiliaryColor, uPupillaryColor, pupillary);
+    Zone zone;
+    zone.tone = mix(uCiliaryColor, uPupillaryColor, pupillary);
+    zone.deep = mix(uCiliaryDeep, uPupillaryDeep, pupillary);
     float wreath = offset < 0.0 ? exp(offset / 0.03) : exp(-offset / uCollaretteBleed);
-    return mix(col, uCollaretteColor, wreath * uCollaretteTint);
+    zone.tone = mix(zone.tone, uCollaretteColor, wreath * uCollaretteTint);
+    zone.deep = mix(zone.deep, uCollaretteColor * 0.5, wreath * uCollaretteTint);
+    return zone;
 }
 
 /* Pigment by its density: sparse melanin is amber, light passing through it, dense melanin
@@ -644,18 +659,20 @@ vec3 limbusLayer(vec3 col, float w) {
     return mix(col, uLimbalColor, smoothstep(uLimbusStart, 1.0, w));
 }
 
-/* Tissue lightness over the zone tone: below the zone's own tone it darkens, above it goes
-   toward white, so bright fibres are pale in the zone's hue. */
-vec3 tissueLayer(vec3 col, float tissue) {
+/* Tissue lightness over the zone tone: below the zone's own tone it goes toward the zone's
+   deep colour, above it toward white, so bright fibres are pale in the zone's hue and the
+   gaps between them are saturated. */
+vec3 tissueLayer(Zone zone, float tissue) {
     float l = tissue * 2.0;
-    return l < 1.0 ? col * l : mix(col, vec3(1.0), (l - 1.0) * uTissueWhiten);
+    if (l < 1.0) return mix(zone.deep, zone.tone, l);
+    return mix(zone.tone, vec3(1.0), (l - 1.0) * uTissueWhiten);
 }
 
 /* Openings onto the pigment epithelium. The ruff is the epithelium itself, folded into
    view; a crypt shows it through the thin stroma left in the opening, which keeps the zone's
    hue, so a blue eye's crypts are navy and an amber zone's are brown. */
-vec3 openingLayer(vec3 col, float opening) {
-    vec3 seen = mix(col * 0.3, uEpitheliumColor, smoothstep(0.75, 1.0, opening));
+vec3 openingLayer(vec3 col, Zone zone, float opening) {
+    vec3 seen = mix(zone.deep * 0.45, uEpitheliumColor, smoothstep(0.75, 1.0, opening));
     return mix(col, seen, opening);
 }
 
@@ -703,11 +720,12 @@ void main() {
     vec4 structure = texture(uIris, rest);
     vec4 dynamics = texture(uIrisDynamics, rest);
 
-    vec3 col = zoneTones(decodeOffset(structure.b));
+    Zone zone = zoneTones(decodeOffset(structure.b));
     // Pigment lies in the border layer with the fibres, so the tissue's lightness runs over it.
-    col = pigmentLayer(col, structure.a);
-    col = tissueLayer(col, structure.r);
-    col = openingLayer(col, furrowLayer(structure.g, dynamics));
+    zone.tone = pigmentLayer(zone.tone, structure.a);
+    zone.deep = pigmentLayer(zone.deep, structure.a) * 0.6;
+    vec3 col = tissueLayer(zone, structure.r);
+    col = openingLayer(col, zone, furrowLayer(structure.g, dynamics));
     col = limbusLayer(col, w);
     col = mix(col, debugLayer(col, structure, dynamics, w, ray.t), uDebug);
     col = mix(col, uPupilColor, pupilMask(w));
@@ -762,7 +780,9 @@ export const IRIS_DEFAULTS = {
   uFreckleColor: [0.35, 0.18, 0.08], // dense melanin, dark brown
   // The palette: band-iris by default, the other presets in iris-palettes.ts.
   uPupillaryColor: [0.5, 0.57, 0.64],
+  uPupillaryDeep: [0.28, 0.36, 0.5], // thin tissue in the pupillary zone: a slate blue
   uCiliaryColor: [0.28, 0.45, 0.62],
+  uCiliaryDeep: [0.08, 0.2, 0.44], // thin tissue in the ciliary zone: cobalt over the epithelium
   uCollaretteColor: [0.8, 0.85, 0.9],
   uCollaretteTint: 0, // how strongly the collarette's own colour shows; 0 leaves it as tissue
   uCollaretteBleed: 0.1, // how far outward the collarette's colour bleeds, in width
