@@ -119,6 +119,11 @@ uniform float uCollaretteZigzag;
 uniform float uRuffDepth;
 uniform float uRuffCrenation;
 uniform float uRuffShade;
+uniform float uFibreContrast;
+uniform float uFibreFine;
+uniform float uFibreFade;
+uniform float uFibreWave;
+uniform float uFibreSharpness;
 ${COORDINATES}
 /* ======================= primitives ======================= */
 
@@ -146,6 +151,29 @@ float turnPolyline(float t, float cells, float seed) {
     float a = hash21(vec2(mod(ix, cells), seed));
     float b = hash21(vec2(mod(ix + 1.0, cells), seed));
     return mix(a, b, x - ix);
+}
+
+/* Value noise on the iris: p.x runs around the circle in cells, whole per turn so the field
+   wraps without a seam, p.y across the width. */
+float irisNoise(vec2 p, float cellsT, float seed) {
+    vec2 i = floor(p);
+    vec2 f = p - i;
+    f = f * f * (3.0 - 2.0 * f);
+    float x0 = mod(i.x, cellsT);
+    float x1 = mod(i.x + 1.0, cellsT);
+    float a = hash21(vec2(x0, i.y) + seed);
+    float b = hash21(vec2(x1, i.y) + seed);
+    float c = hash21(vec2(x0, i.y + 1.0) + seed);
+    float d = hash21(vec2(x1, i.y + 1.0) + seed);
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+/* Three octaves of it, normalised to 0..1, each octave doubling the cells. */
+float irisFbm(vec2 p, float cellsT, float seed) {
+    float sum = irisNoise(p, cellsT, seed) * 0.5
+              + irisNoise(p * 2.0, cellsT * 2.0, seed + 31.0) * 0.25
+              + irisNoise(p * 4.0, cellsT * 4.0, seed + 67.0) * 0.125;
+    return sum / 0.875;
 }
 
 /* ======================= layers ======================= */
@@ -194,18 +222,51 @@ float collarettePath(float t) {
     return uCollarette + uCollaretteZigzag * (collaretteZigzag(t) + 0.5 * drift + 0.15 * ragged);
 }
 
+/* The stromal fibres: the radial streaks of the anterior border layer, collagen bundles
+   running from the margin toward the root. Noise stretched along the width, its cells a few
+   times longer than they are wide, ridged so the bright cores are streaks with feathered
+   flanks, and warped around the circle by a slow noise so the streaks wander and cross
+   rather than run straight. Two scales: fine fibres, dense in the pupillary zone where the
+   sphincter's tissue is finest, and bundles at a quarter the count, which run the whole width
+   and fade toward the root by a knob, since some eyes lose them by mid width. */
+#define FIBRE_FINE 720.0
+#define FIBRE_BUNDLES 180.0
+#define FIBRE_ACROSS 3.0
+#define FIBRE_WAVE_CELLS 24.0
+
+float fibreStreaks(float t, float w, float cellsT, float seed) {
+    // The wander: a slow noise, two cells across the width, so the waves are long and gentle.
+    float wave = irisFbm(vec2(t * FIBRE_WAVE_CELLS, w * 2.0), FIBRE_WAVE_CELLS, seed + 3.0) - 0.5;
+    float tw = t + wave * uFibreWave / cellsT * 4.0;
+    float n = irisFbm(vec2(tw * cellsT, w * FIBRE_ACROSS), cellsT, seed);
+    float ridge = saturate(1.0 - abs(n - 0.5) * 2.5);
+    return pow(ridge, uFibreSharpness);
+}
+
+float stromalFibres(float t, float w, float offset) {
+    float pupillary = 1.0 - smoothstep(-0.03, 0.03, offset);
+    float fade = 1.0 - uFibreFade * smoothstep(0.3, 0.9, w);
+    float fine = fibreStreaks(t, w, FIBRE_FINE, 41.0);
+    float bundles = fibreStreaks(t, w, FIBRE_BUNDLES, 43.0);
+    // Bundles are patchy: brighter and thicker here, thinner there, along and across.
+    float patchy = 0.5 + irisFbm(vec2(t * 48.0, w * 3.0), 48.0, 47.0);
+    float light = fine * pupillary * uFibreFine + bundles * patchy * mix(1.0, 0.6, pupillary) * fade;
+    return uFibreContrast * (light - 0.35);
+}
+
 /* ======================= composition ======================= */
 
 void main() {
     vec2 p = discPoint(vUv);
     Ray ray = rayOf(p);
     float w = widthOf(ray, REST_PUPIL);
+    float offset = w - collarettePath(ray.t);
 
-    float tissue = 0.5;
+    float tissue = 0.5 + stromalFibres(ray.t, w, offset);
     float opening = pupillaryRuff(w, ray.t);
-    float zone = encodeOffset(w - collarettePath(ray.t));
+    float zone = encodeOffset(offset);
     float pigment = 0.0;
-    outColor = vec4(tissue, opening, zone, pigment);
+    outColor = vec4(saturate(tissue), opening, zone, pigment);
 }
 `;
 
@@ -324,6 +385,11 @@ export const IRIS_DEFAULTS = {
   uRuffDepth: 0.025, // the frill's depth in width, about 0.1 mm
   uRuffCrenation: 0.5, // how far the frill's edge swings either side of its depth, as a fraction of it
   uRuffShade: 0.02, // how far the margin shadow reaches in width before it has faded to a third
+  uFibreContrast: 0.45, // how far the fibres lighten and darken the tissue about the zone's tone
+  uFibreFine: 0.4, // the fine fibres' weight in the pupillary zone, relative to the bundles
+  uFibreFade: 0.5, // how much the bundles fade by the root; 1 loses them by mid width
+  uFibreWave: 0.6, // how far the streaks wander around the circle, in fibre spacings
+  uFibreSharpness: 4, // how narrow the bright cores are; higher is thinner streaks
   // The palette: band-iris by default, the other presets in iris-palettes.ts.
   uPupillaryColor: [0.58, 0.64, 0.7],
   uCiliaryColor: [0.28, 0.45, 0.62],
@@ -346,4 +412,9 @@ export const IRIS_BAKE_KEYS = [
   'uRuffDepth',
   'uRuffCrenation',
   'uRuffShade',
+  'uFibreContrast',
+  'uFibreFine',
+  'uFibreFade',
+  'uFibreWave',
+  'uFibreSharpness',
 ] as const satisfies readonly (keyof typeof IRIS_DEFAULTS)[];
