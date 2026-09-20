@@ -7,6 +7,7 @@ import {
   IRIS_VERT,
 } from './iris-shaders';
 import { assertProgramLinked } from './assert-program-linked';
+import { createPupilDynamics, radiusFraction } from './pupil-dynamics';
 
 export type IrisSceneOptions = {
   /** Fade-in length; 0 draws at full alpha from the first frame (the harness). */
@@ -29,6 +30,18 @@ export type IrisScene = {
   setLook(key: LookKey, value: number | readonly number[]): void;
   /** Forces the next render to re-bake (the harness times the bake this way). */
   invalidate(): void;
+  /**
+   * Hands the pupil to the light reflex: the tick then integrates the reflex under the scene
+   * luminance, in log10 blondels, and writes the pupil radius itself. Off, the pupil is a
+   * knob again.
+   */
+  setReflex(enabled: boolean, log10Blondels?: number): void;
+  /** The scene luminance the reflex responds to, in log10 blondels. */
+  setLight(log10Blondels: number): void;
+  /** The resting pupil's small oscillation, on or off. */
+  setHippus(enabled: boolean): void;
+  /** The live pupil radius, a fraction of the iris radius. */
+  pupilRadius(): number;
 };
 
 const FADE_IN_MS = 600;
@@ -128,9 +141,18 @@ export function createIrisScene(r: Renderer, options: IrisSceneOptions = {}): Ir
 
   const mountTime = performance.now();
 
+  /* The light reflex, when it owns the pupil: integrated in the tick and written straight to
+     the live value and its target, so the ease never fights it. */
+  const reflex = createPupilDynamics();
+  let reflexOn = false;
+  let hippusOn = false;
+  let light = 1.7;
+
   const atRest = (dt: number, animated: boolean): boolean => {
     // An animated iris draws every frame; only a still one can come to rest.
     if (animated || dt === 0) return false;
+    // Hippus never rests; a reflex without it settles at its equilibrium like any ease.
+    if (reflexOn && hippusOn) return false;
     // A resize changes no eased value, so it needs an explicit frame.
     if (dirty) {
       dirty = false;
@@ -175,6 +197,13 @@ export function createIrisScene(r: Renderer, options: IrisSceneOptions = {}): Ir
 
   return {
     tick(dt, animated) {
+      if (reflexOn && dt > 0) {
+        const radius = radiusFraction(reflex.step(dt * 1000, light, hippusOn));
+        look.uPupil = radius;
+        lookTarget.uPupil = radius;
+        presentProgram.uniforms.uPupil.value = radius;
+      }
+
       /* Ease the look toward its target; a value within the settle threshold snaps, so the
          bake stops re-running once a transition has effectively landed. */
       const lk = Math.min(1, dt * 8);
@@ -236,6 +265,20 @@ export function createIrisScene(r: Renderer, options: IrisSceneOptions = {}): Ir
     },
     invalidate() {
       bakeDirty = true;
+    },
+    setReflex(enabled, log10Blondels) {
+      if (log10Blondels !== undefined) light = log10Blondels;
+      if (enabled && !reflexOn) reflex.reset(light);
+      reflexOn = enabled;
+    },
+    setLight(log10Blondels) {
+      light = log10Blondels;
+    },
+    setHippus(enabled) {
+      hippusOn = enabled;
+    },
+    pupilRadius() {
+      return look.uPupil as number;
     },
   };
 }

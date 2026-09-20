@@ -17,6 +17,11 @@ const pupil = ref<number>(IRIS_DEFAULTS.uPupil);
 const debug = ref(IRIS_DEFAULTS.uDebug > 0.5);
 const PALETTE_NAMES = Object.keys(IRIS_PALETTES) as PaletteName[];
 const palette = ref<PaletteName>('band-iris');
+/* The light reflex: the scene luminance in log10 blondels, 1.7 being an ordinary room, and
+   whether the reflex owns the pupil. With it on, the pupil readout follows the reflex. */
+const reflex = ref(false);
+const hippus = ref(false);
+const light = ref(1.7);
 const dpr = window.devicePixelRatio || 1;
 
 const irisContainer = useTemplateRef<HTMLDivElement>('irisContainer');
@@ -162,6 +167,8 @@ onMounted(() => {
   el.appendChild(renderer.gl.canvas);
 
   iris = createIrisScene(renderer, { fadeInMs: 0 });
+  // The scene on the window, so a script can drive frames while the tab is hidden.
+  (window as unknown as { stroma?: { iris: IrisScene } }).stroma = { iris };
   timer = createGpuTimer(renderer.gl as WebGL2RenderingContext);
   timerSupported.value = timer.supported;
   pinned.value = loadPin();
@@ -175,6 +182,7 @@ onMounted(() => {
     if (!iris || !timer) return;
     // Always draw: the harness measures the frame cost, not the settle check.
     iris.tick(dt, true);
+    if (reflex.value) pupil.value = Math.round(iris.pupilRadius() * 1000) / 1000;
     timer.begin();
     iris.render();
     timer.end();
@@ -191,7 +199,12 @@ onMounted(() => {
 });
 
 watch(size, applySize);
-watch(pupil, (v) => iris?.setLook('uPupil', v));
+watch(pupil, (v) => {
+  if (!reflex.value) iris?.setLook('uPupil', v);
+});
+watch(reflex, (v) => iris?.setReflex(v, light.value));
+watch(light, (v) => iris?.setLight(v));
+watch(hippus, (v) => iris?.setHippus(v));
 watch(debug, (v) => iris?.setLook('uDebug', v ? 1 : 0));
 watch(palette, (name) => {
   for (const [key, value] of Object.entries(IRIS_PALETTES[name])) {
@@ -220,8 +233,28 @@ const fmt = (v: number | null, digits = 2) => (v === null ? '–' : v.toFixed(di
       </label>
       <label class="flex items-center gap-2">
         Pupil
-        <input v-model.number="pupil" type="range" min="0.12" max="0.7" step="0.01" />
+        <input
+          v-model.number="pupil"
+          type="range"
+          min="0.12"
+          max="0.7"
+          step="0.01"
+          :disabled="reflex"
+        />
         <span class="w-10">{{ pupil.toFixed(2) }}</span>
+      </label>
+      <label class="flex items-center gap-2">
+        <input v-model="reflex" type="checkbox" />
+        Reflex
+      </label>
+      <label class="flex items-center gap-2">
+        Light
+        <input v-model.number="light" type="range" min="-5" max="5" step="0.1" />
+        <span class="w-12">10^{{ light.toFixed(1) }}</span>
+      </label>
+      <label class="flex items-center gap-2">
+        <input v-model="hippus" type="checkbox" />
+        Hippus
       </label>
       <label class="flex items-center gap-2">
         Palette
