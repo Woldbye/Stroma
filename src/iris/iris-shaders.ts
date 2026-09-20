@@ -479,13 +479,17 @@ float contractionFurrows(float t, float w) {
     float depth = 0.0;
     for (float i = 0.0; i < FURROW_COUNT; i += 1.0) {
         float seed = 91.0 + i * 7.0;
-        float wobble = (turnNoise(t, 7.0, seed) - 0.5) * 0.05
+        // Each fold wanders in width, so no two are concentric circles.
+        float wobble = (turnNoise(t, 5.0, seed) - 0.5) * 0.08
                      + (turnNoise(t, 40.0, seed + 3.0) - 0.5) * 0.012;
         float at = mix(uFurrowInner, uFurrowOuter, (i + 0.5) / FURROW_COUNT) + wobble;
-        float presence = smoothstep(0.35, 0.6, turnNoise(t, 4.0, seed + 1.0));
-        float along = 0.6 + 0.6 * turnNoise(t, 14.0, seed + 2.0);
+        // Arcs, not rings: present for a third of the turn or less, fading in and out.
+        float presence = smoothstep(0.5, 0.75, turnNoise(t, 5.0, seed + 1.0));
+        float along = 0.5 + 0.5 * turnNoise(t, 14.0, seed + 2.0);
         float width = uFurrowWidth * (0.7 + 0.6 * turnNoise(t, 11.0, seed + 4.0));
+        // A fold, not a line: soft to the centre.
         float line = 1.0 - smoothstep(0.0, width, abs(w - at));
+        line *= line;
         depth = max(depth, line * presence * along);
     }
     return depth;
@@ -787,9 +791,9 @@ export const IRIS_DEFAULTS = {
   uBandLight: 0.45, // how far the band lightens the tissue
   uFurrowInner: 0.65, // the innermost contraction furrow, in width: 1.5 mm from the root
   uFurrowOuter: 0.78, // the outermost, 1 mm from the root
-  uFurrowWidth: 0.022, // a furrow's soft half-width in width, about 0.09 mm
-  uFurrowRest: 0.45, // the contraction furrows' depth at the rest pupil (present-only)
-  uFurrowDeepen: 0.45, // how much deeper they are at full dilation (present-only)
+  uFurrowWidth: 0.035, // a furrow's soft half-width in width, about 0.15 mm
+  uFurrowRest: 0.2, // the contraction furrows' depth at the rest pupil (present-only)
+  uFurrowDeepen: 0.6, // how much deeper they are at full dilation (present-only)
   uCreaseRest: 0.2, // the radial furrows' depth at rest (present-only)
   uCreaseOpen: 0.5, // how much more they open at full constriction (present-only)
   uPigmentPatches: 0, // the amber patches' strength; band-iris has none
