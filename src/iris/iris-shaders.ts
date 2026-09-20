@@ -638,6 +638,20 @@ vec2 pigment(float t, float w) {
     return vec2(density, uNoduleLight * nodules);
 }
 
+/* ======================= relief ======================= */
+
+/* The surface height: the anterior border layer is not flat. Trabeculae stand up as bundles,
+   the wreath as a ridge, the fibres as fine ridges; crypts are pits and the furrows grooves.
+   Written as a height about a half so the present pass can light it, which is where the
+   highlight and shadow of a textured iris come from. The furrows are taken at their baked
+   pattern, so their relief does not deepen with the pupil; only their darkness does. */
+float relief(float fibres, float wreath, vec2 net, float furrows, float creases) {
+    float ridge = wreath / max(uCollaretteLight, 1e-3);
+    float height = 0.5 + 0.15 * fibres + 0.2 * ridge + 0.35 * net.x - 0.5 * net.y
+                 - 0.25 * furrows - 0.2 * creases;
+    return saturate(height);
+}
+
 /* ======================= composition ======================= */
 
 void main() {
@@ -660,14 +674,18 @@ void main() {
     // Strands brighten and fade along their length.
     float along = 0.5 + 0.7 * irisFbm(vec2(ray.t * 90.0, w * 4.0), 90.0, 61.0);
     float fibres = stromalFibres(ray.t, w, offset);
+    float wreath = collaretteWreath(ray.t, w, offset);
     vec2 melanin = pigment(ray.t, w);
-    float tissue = 0.5 + fibres + collaretteWreath(ray.t, w, offset)
+    float tissue = 0.5 + fibres + wreath
                  + uTrabeculaeLight * net.x * along + peripheralBand(ray.t, w, fibres)
                  + melanin.y;
     float opening = max(pupillaryRuff(w, ray.t), uCryptDepth * net.y);
     float zone = encodeOffset(offset);
     outColor = vec4(saturate(tissue), opening, zone, melanin.x);
-    outDynamics = vec4(contractionFurrows(ray.t, w), radialFurrows(ray.t, w, offset), 0.0, 1.0);
+
+    float furrows = contractionFurrows(ray.t, w);
+    float creases = radialFurrows(ray.t, w, offset);
+    outDynamics = vec4(furrows, creases, relief(fibres, wreath, net, furrows, creases), 1.0);
 }
 `;
 
@@ -693,6 +711,10 @@ uniform float uFurrowRest;
 uniform float uFurrowDeepen;
 uniform float uCreaseRest;
 uniform float uCreaseOpen;
+
+/* ---- relief ---- */
+uniform float uReliefSlope;
+uniform float uReliefLight;
 
 /* ---- palette ---- */
 uniform vec3 uPupillaryColor;
@@ -789,6 +811,23 @@ float furrowLayer(float opening, vec4 dynamics) {
     return 1.0 - (1.0 - opening) * (1.0 - furrows) * (1.0 - creases);
 }
 
+/* The relief, lit: the baked height's gradient, taken over a fixed step in the bake so the
+   slopes do not change with the canvas size, gives a surface normal; a fixed light from the
+   upper left lights the flank of every bundle facing it and shades the one turned away, and
+   darkens the rim of every pit. Returns a factor on the colour, 1 on flat tissue. */
+#define RELIEF_STEP 0.003
+const vec3 RELIEF_LIGHT = normalize(vec3(-0.45, 0.55, 0.7));
+
+float reliefLayer(vec2 rest) {
+    float hx = texture(uIrisDynamics, rest + vec2(RELIEF_STEP, 0.0)).b
+             - texture(uIrisDynamics, rest - vec2(RELIEF_STEP, 0.0)).b;
+    float hy = texture(uIrisDynamics, rest + vec2(0.0, RELIEF_STEP)).b
+             - texture(uIrisDynamics, rest - vec2(0.0, RELIEF_STEP)).b;
+    vec3 n = normalize(vec3(-hx * uReliefSlope, -hy * uReliefSlope, 1.0));
+    float lit = dot(n, RELIEF_LIGHT) / RELIEF_LIGHT.z;
+    return 1.0 + uReliefLight * (lit - 1.0);
+}
+
 /* The pupil: the opening inside the margin, one pixel soft at any size. */
 float pupilMask(float w) {
     float edge = fwidth(w);
@@ -827,6 +866,7 @@ void main() {
     zone.deep = pigmentLayer(zone.deep, structure.a) * 0.6;
     vec3 col = tissueLayer(zone, structure.r);
     col = openingLayer(col, zone, furrowLayer(structure.g, dynamics));
+    col *= reliefLayer(rest);
     col = limbusLayer(col, w);
     col = mix(col, debugLayer(col, structure, dynamics, w, ray.t), uDebug);
     col = mix(col, uPupilColor, pupilMask(w));
@@ -875,6 +915,8 @@ export const IRIS_DEFAULTS = {
   uFurrowDeepen: 0.5, // how much deeper they are at full dilation (present-only)
   uCreaseRest: 0.25, // the radial furrows' depth at rest (present-only)
   uCreaseOpen: 0.35, // how much more they open at full constriction (present-only)
+  uReliefSlope: 3, // how steep the baked height reads, a factor on its gradient (present-only)
+  uReliefLight: 0.5, // how far the light's shading swings the colour; 0 is unlit (present-only)
   uPigmentPatches: 0, // the amber patches' strength; band-iris has none
   uPatchZone: 1, // where the patches lie: 0 toward the pupil, 1 toward the periphery
   uPigmentFreckles: 0.3, // the freckles' density, 1 for a well-freckled iris
