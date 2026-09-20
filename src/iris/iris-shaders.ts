@@ -686,9 +686,12 @@ vec2 pigment(float t, float w) {
    Written as a height about a half so the present pass can light it, which is where the
    highlight and shadow of a textured iris come from. The furrows are taken at their baked
    pattern, so their relief does not deepen with the pupil; only their darkness does. */
-float relief(float fibres, float wreath, vec2 net, float furrows, float creases) {
+float relief(float fibres, float wreath, vec4 net, float furrows, float creases) {
     float ridge = wreath / max(uCollaretteLight, 1e-3);
-    float height = 0.5 + 0.15 * fibres + 0.2 * ridge + 0.15 * net.x - 0.5 * net.y
+    // Crowded collagen stands higher and parted collagen lies lower: the rim of an opening
+    // is a raised bundle because the fibres are bunched there, not because a wall is drawn.
+    float bunch = clamp(net.w - 1.0, -1.0, 1.5);
+    float height = 0.5 + 0.15 * fibres + 0.2 * ridge + 0.06 * net.x + 0.2 * bunch - 0.5 * net.y
                  - 0.25 * furrows - 0.2 * creases;
     return saturate(height);
 }
@@ -726,7 +729,7 @@ void main() {
 
     float furrows = contractionFurrows(ray.t, w);
     float creases = radialFurrows(ray.t, w, offset);
-    outDynamics = vec4(furrows, creases, relief(fibres, wreath, net.xy, furrows, creases), 1.0);
+    outDynamics = vec4(furrows, creases, relief(fibres, wreath, net, furrows, creases), 1.0);
 }
 `;
 
