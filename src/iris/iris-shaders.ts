@@ -514,7 +514,13 @@ vec4 trabeculaeAndCrypts(float t, float w, float outward) {
     float reach = 1.0 - smoothstep(uTrabeculaeReach - 0.15, uTrabeculaeReach + 0.1, outward);
     float inside = owner < -NET_RINGS_IN ? 0.0 : 1.0;
     float open = cryptOpen(owner, ownerColumn, netColumns(owner)) * inside;
-    float crypt = open * smoothstep(0.0, uCryptFeather, nearest) * reach;
+    // The opening is a lens around the seed, radially elongated as its cell is and a little
+    // pointed at the ends, kept inside the walls; a merged cell holds a lens smaller than
+    // itself with a wide rim of tissue round it.
+    vec2 q = abs(mr) / (1.7 * vec2(PI * r / netColumns(owner), ry));
+    float lens = pow(pow(q.x, 1.6) + pow(q.y, 1.6), 1.0 / 1.6);
+    float floorShape = 1.0 - smoothstep(0.5, 1.0, lens);
+    float crypt = open * min(floorShape, smoothstep(0.0, uCryptFeather, nearest)) * reach;
     // The displacement as a turn at this radius; the crowding is 1 less the slope, since
     // the picture at t shows the fibre that was displaced to it.
     float deflect = flow.x * reach / (2.0 * PI * r);
