@@ -783,6 +783,10 @@ uniform float uCreaseOpen;
 uniform float uReliefSlope;
 uniform float uReliefLight;
 
+/* ---- cornea and lids ---- */
+uniform float uCornea;
+uniform float uLidShadow;
+
 /* ---- palette ---- */
 uniform vec3 uPupillaryColor;
 uniform vec3 uPupillaryDeep;
@@ -850,12 +854,14 @@ vec3 limbusLayer(vec3 col, float w) {
 }
 
 /* Tissue lightness over the zone tone: below the zone's own tone it goes toward the zone's
-   deep colour, above it toward white, so bright fibres are pale in the zone's hue and the
-   gaps between them are saturated. */
+   deep colour; above it the tone is multiplied, so bright fibres stay in the zone's hue and
+   only whiten by the knob, and the gaps between them are saturated. Lightness multiplies
+   colour rather than mixing it toward white: that is where a deep colour comes from. */
 vec3 tissueLayer(Zone zone, float tissue) {
     float l = tissue * 2.0;
     if (l < 1.0) return mix(zone.deep, zone.tone, l);
-    return mix(zone.tone, vec3(1.0), (l - 1.0) * uTissueWhiten);
+    vec3 lit = zone.tone * (1.0 + (l - 1.0) * 0.9);
+    return mix(lit, vec3(1.0), (l - 1.0) * uTissueWhiten * 0.6);
 }
 
 /* Openings onto the pigment epithelium. The ruff is the epithelium itself, folded into
@@ -901,6 +907,35 @@ float pupilMask(float w) {
     return 1.0 - smoothstep(-edge, edge, w);
 }
 
+/* Light is composed in linear light: the palette is sRGB, so the composed colour is decoded
+   before the surface is lit and encoded after. */
+vec3 toLinear(vec3 c) { return pow(max(c, 0.0), vec3(2.2)); }
+vec3 toSrgb(vec3 c) { return pow(max(c, 0.0), vec3(1.0 / 2.2)); }
+
+/* The cornea: a clear dome over the iris, face on, whose normal tilts outward with the
+   radius. It reflects the room by Fresnel, a few percent straight on: a sky above, a dark
+   floor below, and one bright window up and to the left whose reflection is the catchlight,
+   a small soft disc that sits over the pupil's margin at rest. The iris is seen through it,
+   so the reflection is added over everything, the pupil included. */
+#define CORNEA_DOME 0.55
+const vec3 CORNEA_WINDOW = normalize(vec3(-0.12, 0.16, 0.98));
+
+vec3 corneaLayer(vec3 col, vec2 p) {
+    vec3 n = normalize(vec3(p * CORNEA_DOME, 1.0));
+    float fresnel = 0.02 + 0.98 * pow(1.0 - n.z, 5.0);
+    vec3 r = 2.0 * n.z * n - vec3(0.0, 0.0, 1.0);
+    vec3 room = mix(vec3(0.02, 0.02, 0.025), vec3(0.35, 0.4, 0.5), smoothstep(-0.4, 0.7, r.y));
+    float window = smoothstep(0.9965, 0.9995, dot(r, CORNEA_WINDOW));
+    room += vec3(70.0, 70.0, 72.0) * window;
+    return col + room * fresnel * uCornea;
+}
+
+/* The upper lid's shadow: the eye sits under a lid and a brow, so its top is darker than
+   its bottom. Zero for an iris shown bare. */
+vec3 lidLayer(vec3 col, vec2 p) {
+    return col * (1.0 - uLidShadow * smoothstep(0.1, 1.0, p.y));
+}
+
 /* The coordinate check: a line every tenth of the width and every fifteen degrees from the
    live coordinates, and the collarette's path in gold from the bake, so the gold line and the
    zone tone show the remap while the grid shows what it should be. */
@@ -933,10 +968,15 @@ void main() {
     zone.deep = pigmentLayer(zone.deep, structure.a) * 0.6;
     vec3 col = tissueLayer(zone, structure.r);
     col = openingLayer(col, zone, furrowLayer(structure.g, dynamics));
-    col *= reliefLayer(rest, dynamics.b);
     col = limbusLayer(col, w);
-    col = mix(col, debugLayer(col, structure, dynamics, w, ray.t), uDebug);
     col = mix(col, uPupilColor, pupilMask(w));
+    // The surface is lit in linear light: the relief, the lid, then the cornea over it all.
+    col = toLinear(col);
+    col *= reliefLayer(rest, dynamics.b);
+    col = lidLayer(col, p);
+    col = corneaLayer(col, p);
+    col = toSrgb(col);
+    col = mix(col, debugLayer(col, structure, dynamics, w, ray.t), uDebug);
 
     float a = disc * uAlpha;
     // Premultiplied alpha: the canvas is composited that way.
@@ -986,6 +1026,8 @@ export const IRIS_DEFAULTS = {
   uCreaseOpen: 0.35, // how much more they open at full constriction (present-only)
   uReliefSlope: 3, // how steep the baked height reads, a factor on its gradient (present-only)
   uReliefLight: 0.5, // how far the light's shading swings the colour; 0 is unlit (present-only)
+  uCornea: 1, // the corneal reflection's strength: the room by Fresnel and the catchlight (present-only)
+  uLidShadow: 0.25, // how far the upper lid darkens the top of the eye; 0 for a bare iris (present-only)
   uPigmentPatches: 0, // the amber patches' strength; band-iris has none
   uPatchZone: 1, // where the patches lie: 0 toward the pupil, 1 toward the periphery
   uPigmentFreckles: 0.3, // the freckles' density, 1 for a well-freckled iris
