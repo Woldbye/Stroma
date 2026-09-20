@@ -1,6 +1,7 @@
 import { Renderer } from 'ogl';
 import { createIrisScene, type IrisScene, type IrisSceneOptions, type LookKey } from './iris-scene';
-import { IRIS_PALETTES, type PaletteName } from './iris-palettes';
+import { IRIS_DEFAULTS } from './iris-shaders';
+import { IRIS_PALETTES, PALETTE_KEYS, type PaletteName } from './iris-palettes';
 
 /* Mounting the iris in a page: one WebGL2 renderer on an element, the scene on it, and the
    frame loop that drives it. The demo and the harness both build on this, so neither carries
@@ -46,10 +47,12 @@ export function mountIris(el: HTMLElement, options: IrisSceneOptions = {}): Iris
   };
 }
 
-/** Applies a palette preset's knobs to the scene. */
+/** Applies a palette preset's knobs to the scene. A preset names only the knobs it moves,
+    so every knob any preset touches goes back to its default first. */
 export function applyPalette(iris: IrisScene, name: PaletteName) {
-  for (const [key, value] of Object.entries(IRIS_PALETTES[name])) {
-    iris.setLook(key as LookKey, value);
+  const palette: Partial<Record<LookKey, number | readonly number[]>> = IRIS_PALETTES[name];
+  for (const key of PALETTE_KEYS) {
+    iris.setLook(key, palette[key] ?? IRIS_DEFAULTS[key]);
   }
 }
 

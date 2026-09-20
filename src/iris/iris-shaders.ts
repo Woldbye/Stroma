@@ -131,6 +131,7 @@ uniform float uFibreGaps;
 uniform float uCollaretteWidth;
 uniform float uCollaretteLight;
 uniform float uCryptRing;
+uniform float uCryptColumns;
 uniform float uCryptJitter;
 uniform float uCryptFraction;
 uniform float uCryptFeather;
@@ -347,7 +348,6 @@ float collaretteWreath(float t, float w, float offset) {
    wall has its own weight, so a strand thins to nothing here and thickens there, forking and
    breaking rather than tiling. */
 
-#define NET_COLUMNS 56.0
 #define NET_SPLIT 1.4
 #define NET_SEED 41.7
 #define NET_RINGS_IN 1.0
@@ -383,8 +383,8 @@ float ringSpaceInverse(float s) {
 
 /* Whole, so the ring wraps without a seam. */
 float netColumns(float ring) {
-    if (ring < 0.0) return floor(NET_COLUMNS * 1.5 + 0.5);
-    return floor(NET_COLUMNS * pow(NET_SPLIT, ring) + 0.5);
+    if (ring < 0.0) return floor(uCryptColumns * 1.5 + 0.5);
+    return floor(uCryptColumns * pow(NET_SPLIT, ring) + 0.5);
 }
 
 /* The seed of column c in ring j as an offset from the point, in the disc's frame: arc
@@ -450,7 +450,7 @@ vec4 trabeculaeAndCrypts(float t, float w, float outward) {
     float bend = irisFbm(vec2(t * 40.0, outward * 8.0), 40.0, 67.0) - 0.5;
     outward += (irisFbm(vec2(t * 9.0, outward * 2.0), 9.0, 63.0) - 0.5) * NET_RING_WANDER * uCryptRing
              + bend * 0.3 * uCryptRing;
-    t += (irisFbm(vec2(t * 6.0, outward * 3.0), 6.0, 65.0) - 0.5 + bend * 0.5) * NET_COLUMN_WANDER / NET_COLUMNS;
+    t += (irisFbm(vec2(t * 6.0, outward * 3.0), 6.0, 65.0) - 0.5 + bend * 0.5) * NET_COLUMN_WANDER / uCryptColumns;
     float ringHere = floor(ringSpace(outward) / uCryptRing);
 
     /* Pass 1: the owning seed. Seeds stray little along the radius, so the owner sits in this
@@ -938,6 +938,7 @@ export const IRIS_DEFAULTS = {
   uCollaretteWidth: 0.07, // the wreath's visible width in width units, about 0.3 mm
   uCollaretteLight: 0.3, // how far the wreath lightens the tissue on its crest
   uCryptRing: 0.2, // height of the ring of cells just outside the wreath, in width
+  uCryptColumns: 56, // cells around the ring just outside the wreath; fewer is larger openings. Whole, and it re-seeds the web
   uCryptJitter: 0.9, // how far seeds stray from their cell centres; 0 is a regular lattice
   uCryptFraction: 1, // scales the fraction of cells that are open crypts
   uCryptFeather: 0.05, // how far into a crypt the darkening takes to reach full depth, in disc radii
@@ -998,6 +999,7 @@ export const IRIS_BAKE_KEYS = [
   'uCollaretteWidth',
   'uCollaretteLight',
   'uCryptRing',
+  'uCryptColumns',
   'uCryptJitter',
   'uCryptFraction',
   'uCryptFeather',

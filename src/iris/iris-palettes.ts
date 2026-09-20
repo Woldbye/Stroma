@@ -82,6 +82,72 @@ export const IRIS_PALETTES = {
     uPigmentColor: [0.95, 0.7, 0.2],
     uFreckleColor: [0.8, 0.45, 0.1],
   },
+  /* A flower iris: the collagen splits and converges round large rounded openings that run
+     to the root, with bright bunched rims and deep teal floors. A flat amber pupillary zone,
+     an amber collarette bleeding outward, a teal-green ciliary zone over dark teal, a dark
+     limbus, hardly any rings, no freckles. */
+  green_iris: {
+    uPupillaryColor: [0.84, 0.72, 0.36],
+    uPupillaryDeep: [0.46, 0.36, 0.12],
+    uCiliaryColor: [0.36, 0.62, 0.55],
+    uCiliaryDeep: [0.03, 0.22, 0.26],
+    uCollaretteColor: [0.9, 0.76, 0.36],
+    uCollaretteTint: 0.7,
+    uCollaretteBleed: 0.12,
+    uLimbalColor: [0.05, 0.16, 0.18],
+    uEpitheliumColor: [0.1, 0.08, 0.05],
+    uRuffShade: 0.03,
+    uTissueWhiten: 0.7,
+    uBandLight: 0.15,
+    uTrabeculaeReach: 0.95,
+    uCryptFraction: 1.6,
+    uCryptBulge: 1.1,
+    uCryptColumns: 40,
+    uCryptDepth: 0.9,
+    uFibreFade: 0.2,
+    uFurrowCount: 2,
+    uPigmentPatches: 0,
+    uPatchZone: 0,
+    uPigmentFreckles: 0,
+    uNoduleLight: 0,
+    uPigmentColor: [0.85, 0.65, 0.3],
+    uFreckleColor: [0.4, 0.22, 0.08],
+  },
+  /* A stream iris: fine parallel fibres over the whole width, few and small openings, so the
+     collagen barely deflects. Grey-green pupillary zone, blue-green ciliary zone over a
+     muted teal, a soft collarette, amber patches round the pupil and a few rust freckles. */
+  blue_green: {
+    uPupillaryColor: [0.64, 0.68, 0.52],
+    uPupillaryDeep: [0.3, 0.38, 0.32],
+    uCiliaryColor: [0.4, 0.6, 0.62],
+    uCiliaryDeep: [0.12, 0.3, 0.36],
+    uCollaretteColor: [0.76, 0.72, 0.5],
+    uCollaretteTint: 0.35,
+    uCollaretteBleed: 0.08,
+    uLimbalColor: [0.12, 0.2, 0.24],
+    uEpitheliumColor: [0.12, 0.09, 0.06],
+    uRuffShade: 0.03,
+    uTissueWhiten: 0.5,
+    uTrabeculaeReach: 0.2,
+    uCryptFraction: 0.35,
+    uCryptBulge: 0.4,
+    uCryptColumns: 64,
+    uCryptDepth: 0.6,
+    uFibreContrast: 0.55,
+    uFibreFade: 0.15,
+    uFurrowCount: 4,
+    uPigmentPatches: 0.8,
+    uPatchZone: 0,
+    uPigmentFreckles: 0.6,
+    uNoduleLight: 0,
+    uPigmentColor: [0.85, 0.62, 0.25],
+    uFreckleColor: [0.55, 0.3, 0.1],
+  },
 } as const satisfies Record<string, Palette>;
+
+/** Every knob any palette sets, so switching palettes resets the ones a palette leaves out. */
+export const PALETTE_KEYS = [
+  ...new Set(Object.values(IRIS_PALETTES).flatMap((p) => Object.keys(p))),
+] as (keyof Palette)[];
 
 export type PaletteName = keyof typeof IRIS_PALETTES;
