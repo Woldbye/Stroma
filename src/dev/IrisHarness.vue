@@ -212,7 +212,7 @@ const fmt = (v: number | null, digits = 2) => (v === null ? '–' : v.toFixed(di
       </label>
       <label class="flex items-center gap-2">
         Pupil
-        <input v-model.number="pupil" type="range" min="0.05" max="0.5" step="0.01" />
+        <input v-model.number="pupil" type="range" min="0.12" max="0.7" step="0.01" />
         <span class="w-10">{{ pupil.toFixed(2) }}</span>
       </label>
       <label class="flex items-center gap-2">
