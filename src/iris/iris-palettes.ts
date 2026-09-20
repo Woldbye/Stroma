@@ -104,6 +104,7 @@ export const IRIS_PALETTES = {
     uCryptBulge: 1.1,
     uCryptColumns: 40,
     uCryptDepth: 0.9,
+    uFibreContrast: 0.7,
     uFibreFade: 0.2,
     uFurrowCount: 2,
     uPigmentPatches: 0,

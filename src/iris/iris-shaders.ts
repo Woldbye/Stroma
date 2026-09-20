@@ -160,6 +160,11 @@ float hash21(vec2 p) {
     return fract(p.x * p.y);
 }
 
+vec2 hash22(vec2 p) {
+    float a = hash21(p);
+    return vec2(a, hash21(p + a + 7.31));
+}
+
 /* Value noise around the circle: t is the turn in 0..1, periodic by wrapping the cell index,
    so no seam blend is needed. Cells must be whole. Smooth, or linear for a polyline. */
 float turnNoise(float t, float cells, float seed) {
@@ -255,15 +260,17 @@ float collarettePath(float t) {
     return collaretteMean(t) + uCollaretteZigzag * (collaretteZigzag(t) + 0.15 * ragged);
 }
 
-/* The stromal fibres: the radial streaks of the anterior border layer, collagen bundles
-   running from the margin toward the root. Noise stretched along the width, its cells a few
-   times longer than they are wide, ridged so the bright cores are streaks with feathered
-   flanks, and warped around the circle by a slow noise so the streaks wander and cross
-   rather than run straight. Two scales: fine fibres, dense in the pupillary zone where the
-   sphincter's tissue is finest, and bundles at a quarter the count, which run the whole width
-   and fade toward the root by a knob, since some eyes lose them by mid width. */
+/* The stromal fibres: the collagen bundles of the anterior border layer, running from the
+   margin toward the root. In the ciliary zone they are cords: separate strands, each
+   continuous across the width, waving together, with dark gaps between them, forking on the
+   way to the root. Perlin's marble in polar coordinates: a periodic carrier around the turn
+   with the wander in its phase, so a cord never fades out as a noise ridge does, sharpened
+   into a ridge with a gap to its neighbours. A second field at twice the count whose cords
+   emerge one by one outward gives the forks. The pupillary zone, where the sphincter's tissue
+   is finest, keeps fine fibres from stretched noise. The bundles fade toward the root by a
+   knob, since some eyes lose them by mid width. */
 #define FIBRE_FINE 720.0
-#define FIBRE_BUNDLES 180.0
+#define FIBRE_CORDS 128.0
 #define FIBRE_ACROSS 3.0
 #define FIBRE_WAVE_CELLS 24.0
 
@@ -279,6 +286,25 @@ float fibreStreaks(float t, float w, float cellsT, float seed, float wave, float
     return pow(ridge, uFibreSharpness);
 }
 
+/* A cord field: count cords around the turn, the wander in their phase in cord spacings so
+   neighbours wave together, each cord with its own width, brightness and a small offset
+   from a hash of its index, a soft ridge with a dark gap to the next. With forkFrom at or
+   above zero each cord emerges at its own width past it, so the field's cords appear one by
+   one between the cords of the field below. Returns light, 0 in the gaps. */
+float fibreCords(float t, float w, float count, float seed, float wave, float wander, float forkFrom) {
+    float x = t * count + wave * wander * 6.0;
+    float i = floor(x);
+    vec2 id = vec2(mod(i, count), seed);
+    vec2 h = hash22(id);
+    float centre = 0.5 + 0.2 * (hash21(id + 3.0) - 0.5);
+    float width = 0.14 + 0.24 * h.x;
+    float d = abs(x - i - centre) / width;
+    float cord = pow(1.0 - smoothstep(0.0, 1.0, d), 1.2) * (0.45 + 0.55 * h.y);
+    if (forkFrom < 0.0) return cord;
+    float start = forkFrom + 0.5 * hash21(id + 7.0);
+    return cord * smoothstep(start, start + 0.2, w);
+}
+
 /* deflect and crowd come from the web: the fibres are sampled where the openings have
    pushed them to, and their light scales with how densely they lie, so an opening's rim is
    bright because the collagen is bunched there and its floor is sparse. */
@@ -291,7 +317,9 @@ float stromalFibres(float t, float w, float offset, float deflect, float crowd) 
     float ripple = irisFbm(vec2(t * 96.0, w * 5.0), 96.0, 45.0) - 0.5;
     float tf = t - deflect;
     float fine = fibreStreaks(tf, w, FIBRE_FINE, 41.0, wave + 0.7 * ripple, uFibreWave);
-    float bundles = fibreStreaks(tf, w, FIBRE_BUNDLES, 43.0, wave, uFibreWave);
+    // The cords, and the forks that emerge between them from a third of the width outward.
+    float bundles = max(fibreCords(tf, w, FIBRE_CORDS, 43.0, wave, uFibreWave, -1.0),
+                        fibreCords(tf, w, FIBRE_CORDS * 2.0, 45.0, wave, uFibreWave, 0.3));
     // Bundles are patchy: brighter and thicker here, thinner there, along and across.
     float patchy = 0.5 + irisFbm(vec2(t * 48.0, w * 3.0), 48.0, 47.0);
     // The pupillary zone is patchy by sector too, some sectors pale and dense, others thin
@@ -357,11 +385,6 @@ float collaretteWreath(float t, float w, float offset) {
 #define NET_RING_WANDER 0.5
 #define NET_COLUMN_WANDER 1.2
 #define NET_DROPOUT 0.2
-
-vec2 hash22(vec2 p) {
-    float a = hash21(p);
-    return vec2(a, hash21(p + a + 7.31));
-}
 
 /* A seed's own hash, for the dropout and for the walls it shares. */
 float netSeedHash(float j, float c, float columns) {
