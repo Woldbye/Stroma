@@ -12,7 +12,9 @@
    tissue of the anterior border layer and the dark pigment epithelium showing through where
    it thins, so no layer paints colour: red is tissue lightness, 0.5 the zone's own tone;
    green is opening depth, how much epithelium shows; blue is the signed offset from the
-   collarette's path, which is zone membership; alpha is pigment. */
+   collarette's path, which is zone membership; alpha is pigment. A second texture carries
+   the fields the present pass scales with the pupil: red the contraction furrows, which
+   deepen with dilation, green the radial furrows, which open with constriction. */
 
 export const IRIS_VERT = `#version 300 es
 in vec2 position;
@@ -108,7 +110,8 @@ export const IRIS_BAKE_FRAG = `#version 300 es
 precision highp float;
 
 in vec2 vUv;
-out vec4 outColor;
+layout(location = 0) out vec4 outColor;
+layout(location = 1) out vec4 outDynamics;
 
 /* ---- host contract ---- */
 uniform vec2 uResolution;
@@ -137,6 +140,9 @@ uniform float uBandReach;
 uniform float uBandSoftness;
 uniform float uBandBite;
 uniform float uBandLight;
+uniform float uFurrowInner;
+uniform float uFurrowOuter;
+uniform float uFurrowWidth;
 ${COORDINATES}
 /* ======================= primitives ======================= */
 
@@ -253,10 +259,10 @@ float collarettePath(float t) {
 #define FIBRE_ACROSS 3.0
 #define FIBRE_WAVE_CELLS 24.0
 
-float fibreStreaks(float t, float w, float cellsT, float seed) {
+float fibreStreaks(float t, float w, float cellsT, float seed, float wander) {
     // The wander: a slow noise, two cells across the width, so the waves are long and gentle.
     float wave = irisFbm(vec2(t * FIBRE_WAVE_CELLS, w * 2.0), FIBRE_WAVE_CELLS, seed + 3.0) - 0.5;
-    float tw = t + wave * uFibreWave / cellsT * 4.0;
+    float tw = t + wave * wander / cellsT * 4.0;
     float n = irisFbm(vec2(tw * cellsT, w * FIBRE_ACROSS), cellsT, seed);
     float ridge = saturate(1.0 - abs(n - 0.5) * 2.5);
     return pow(ridge, uFibreSharpness);
@@ -265,8 +271,8 @@ float fibreStreaks(float t, float w, float cellsT, float seed) {
 float stromalFibres(float t, float w, float offset) {
     float pupillary = 1.0 - smoothstep(-0.03, 0.03, offset);
     float fade = 1.0 - uFibreFade * smoothstep(0.3, 0.9, w);
-    float fine = fibreStreaks(t, w, FIBRE_FINE, 41.0);
-    float bundles = fibreStreaks(t, w, FIBRE_BUNDLES, 43.0);
+    float fine = fibreStreaks(t, w, FIBRE_FINE, 41.0, uFibreWave);
+    float bundles = fibreStreaks(t, w, FIBRE_BUNDLES, 43.0, uFibreWave);
     // Bundles are patchy: brighter and thicker here, thinner there, along and across.
     float patchy = 0.5 + irisFbm(vec2(t * 48.0, w * 3.0), 48.0, 47.0);
     float light = fine * pupillary * uFibreFine + bundles * patchy * mix(1.0, 0.6, pupillary) * fade;
@@ -446,6 +452,45 @@ float peripheralBand(float t, float w, float fibres) {
     return uBandLight * band * cloud;
 }
 
+/* ======================= furrows ======================= */
+
+/* The contraction furrows: concentric folds in the outer ciliary zone where the tissue
+   bunches as the pupil dilates. A few of them between the inner and outer bounds, each an
+   arc rather than a full circle, present where a slow noise says so, wobbling a little in
+   width and varying in depth along its length, soft across. Baked at their pattern; the
+   present pass deepens them with dilation. */
+#define FURROW_COUNT 3.0
+
+float contractionFurrows(float t, float w) {
+    float depth = 0.0;
+    for (float i = 0.0; i < FURROW_COUNT; i += 1.0) {
+        float seed = 91.0 + i * 7.0;
+        float wobble = (turnNoise(t, 7.0, seed) - 0.5) * 0.05
+                     + (turnNoise(t, 40.0, seed + 3.0) - 0.5) * 0.012;
+        float at = mix(uFurrowInner, uFurrowOuter, (i + 0.5) / FURROW_COUNT) + wobble;
+        float presence = smoothstep(0.35, 0.6, turnNoise(t, 4.0, seed + 1.0));
+        float along = 0.6 + 0.6 * turnNoise(t, 14.0, seed + 2.0);
+        float width = uFurrowWidth * (0.7 + 0.6 * turnNoise(t, 11.0, seed + 4.0));
+        float line = 1.0 - smoothstep(0.0, width, abs(w - at));
+        depth = max(depth, line * presence * along);
+    }
+    return depth;
+}
+
+/* The radial furrows: the deeper creases between fibre bundles in the mid ciliary zone,
+   which open as the pupil constricts and the zone stretches. Sparse thin streaks from the
+   fibre field, sharpened hard, present in patches. Baked at their pattern; the present pass
+   opens them with constriction. */
+#define CREASE_COUNT 48.0
+
+float radialFurrows(float t, float w, float outward) {
+    // Straighter than the fibres: a crease follows the stretch, not the bundles' wander.
+    float streak = pow(fibreStreaks(t, w, CREASE_COUNT, 97.0, 0.15), 3.0);
+    float zone = smoothstep(0.05, 0.2, outward) * (1.0 - smoothstep(0.45, 0.65, outward));
+    float presence = smoothstep(0.45, 0.7, turnNoise(t, 16.0, 101.0));
+    return streak * zone * presence;
+}
+
 /* ======================= composition ======================= */
 
 void main() {
@@ -464,6 +509,7 @@ void main() {
     float zone = encodeOffset(offset);
     float pigment = 0.0;
     outColor = vec4(saturate(tissue), opening, zone, pigment);
+    outDynamics = vec4(contractionFurrows(ray.t, w), radialFurrows(ray.t, w, offset), 0.0, 1.0);
 }
 `;
 
@@ -477,11 +523,18 @@ out vec4 outColor;
 uniform float uAlpha;
 uniform vec2 uResolution;
 uniform sampler2D uIris;
+uniform sampler2D uIrisDynamics;
 
 /* ---- state ---- */
 uniform float uPupil;
 uniform vec3 uPupilColor;
 uniform float uDebug;
+
+/* ---- contraction ---- */
+uniform float uFurrowRest;
+uniform float uFurrowDeepen;
+uniform float uCreaseRest;
+uniform float uCreaseOpen;
 
 /* ---- palette ---- */
 uniform vec3 uPupillaryColor;
@@ -539,6 +592,18 @@ vec3 openingLayer(vec3 col, float opening) {
     return mix(col, seen, opening);
 }
 
+/* The furrows, scaled with the pupil: the contraction furrows deepen as the pupil dilates
+   past rest and the tissue bunches, the radial furrows open as it constricts and the ciliary
+   zone stretches. Joined to the static openings as a union, so a crypt and a furrow crossing
+   it stay soft. */
+float furrowLayer(float opening, vec4 dynamics) {
+    float dilation = saturate((uPupil - REST_PUPIL) / (0.67 - REST_PUPIL));
+    float constriction = saturate((REST_PUPIL - uPupil) / (REST_PUPIL - 0.17));
+    float furrows = dynamics.r * (uFurrowRest + uFurrowDeepen * dilation);
+    float creases = dynamics.g * (uCreaseRest + uCreaseOpen * constriction);
+    return 1.0 - (1.0 - opening) * (1.0 - furrows) * (1.0 - creases);
+}
+
 /* The pupil: the opening inside the margin, one pixel soft at any size. */
 float pupilMask(float w) {
     float edge = fwidth(w);
@@ -548,9 +613,12 @@ float pupilMask(float w) {
 /* The coordinate check: a line every tenth of the width and every fifteen degrees from the
    live coordinates, and the collarette's path in gold from the bake, so the gold line and the
    zone tone show the remap while the grid shows what it should be. */
-vec3 debugLayer(vec3 col, vec4 structure, float w, float t) {
+vec3 debugLayer(vec3 col, vec4 structure, vec4 dynamics, float w, float t) {
     float lines = max(isoline(w * 10.0), isoline(t * 24.0));
     col = mix(col, vec3(0.15), lines * 0.6);
+    // The dynamic fields in red and green, at full depth, so their patterns can be checked.
+    col = mix(col, vec3(1.0, 0.2, 0.2), dynamics.r * 0.8);
+    col = mix(col, vec3(0.2, 1.0, 0.2), dynamics.g * 0.8);
     float path = 1.0 - smoothstep(0.0, fwidth(structure.b) * 2.0, abs(structure.b - 0.5));
     return mix(col, vec3(1.0, 0.8, 0.3), path);
 }
@@ -564,13 +632,15 @@ void main() {
     // Contraction: this pixel shows the tissue that sat at restPoint when the structure was baked.
     Ray ray = rayOf(p);
     float w = widthOf(ray, uPupil);
-    vec4 structure = texture(uIris, restPoint(ray, w) * 0.5 + 0.5);
+    vec2 rest = restPoint(ray, w) * 0.5 + 0.5;
+    vec4 structure = texture(uIris, rest);
+    vec4 dynamics = texture(uIrisDynamics, rest);
 
     vec3 col = zoneTones(decodeOffset(structure.b));
     col = tissueLayer(col, structure.r);
-    col = openingLayer(col, structure.g);
+    col = openingLayer(col, furrowLayer(structure.g, dynamics));
     col = limbusLayer(col, w);
-    col = mix(col, debugLayer(col, structure, w, ray.t), uDebug);
+    col = mix(col, debugLayer(col, structure, dynamics, w, ray.t), uDebug);
     col = mix(col, uPupilColor, pupilMask(w));
 
     float a = disc * uAlpha;
@@ -608,6 +678,13 @@ export const IRIS_DEFAULTS = {
   uBandSoftness: 0.08, // the base softness of its inner edge, in width; varies around this
   uBandBite: 0.15, // how far bright fibres push the band's edge outward
   uBandLight: 0.45, // how far the band lightens the tissue
+  uFurrowInner: 0.65, // the innermost contraction furrow, in width: 1.5 mm from the root
+  uFurrowOuter: 0.78, // the outermost, 1 mm from the root
+  uFurrowWidth: 0.022, // a furrow's soft half-width in width, about 0.09 mm
+  uFurrowRest: 0.45, // the contraction furrows' depth at the rest pupil (present-only)
+  uFurrowDeepen: 0.45, // how much deeper they are at full dilation (present-only)
+  uCreaseRest: 0.2, // the radial furrows' depth at rest (present-only)
+  uCreaseOpen: 0.5, // how much more they open at full constriction (present-only)
   // The palette: band-iris by default, the other presets in iris-palettes.ts.
   uPupillaryColor: [0.5, 0.57, 0.64],
   uCiliaryColor: [0.28, 0.45, 0.62],
@@ -648,4 +725,7 @@ export const IRIS_BAKE_KEYS = [
   'uBandSoftness',
   'uBandBite',
   'uBandLight',
+  'uFurrowInner',
+  'uFurrowOuter',
+  'uFurrowWidth',
 ] as const satisfies readonly (keyof typeof IRIS_DEFAULTS)[];

@@ -78,12 +78,14 @@ export function createIrisScene(r: Renderer, options: IrisSceneOptions = {}): Ir
 
   const geometry = new Triangle(gl);
 
-  /* The baked iris, square with the disc inscribed. ogl's render target never builds mip
-     levels itself; `bake` generates them after each draw, and the trilinear filter here is what
-     the present pass then reads through. */
+  /* The baked iris, square with the disc inscribed: two textures, the structure and the
+     dynamic fields the present pass scales with the pupil. ogl's render target never builds
+     mip levels itself; `bake` generates them after each draw, and the trilinear filter here is
+     what the present pass then reads through. */
   const irisTarget = new RenderTarget(gl, {
     width: 2,
     height: 2,
+    color: 2,
     depth: false,
     wrapS: gl.CLAMP_TO_EDGE,
     wrapT: gl.CLAMP_TO_EDGE,
@@ -117,7 +119,8 @@ export function createIrisScene(r: Renderer, options: IrisSceneOptions = {}): Ir
       ...lookUniforms(),
       uResolution: { value: resolution },
       uAlpha: { value: fadeInMs === 0 ? 1 : 0 },
-      uIris: { value: irisTarget.texture },
+      uIris: { value: irisTarget.textures[0] },
+      uIrisDynamics: { value: irisTarget.textures[1] },
     },
   });
   assertProgramLinked(gl, presentProgram, 'iris present');
@@ -163,8 +166,10 @@ export function createIrisScene(r: Renderer, options: IrisSceneOptions = {}): Ir
     bakeResolution[1] = size;
     r.render({ scene: bakeMesh, target: irisTarget });
     // Through ogl's bind so its texture-unit cache stays in step with the GL state.
-    irisTarget.texture.bind();
-    gl.generateMipmap(gl.TEXTURE_2D);
+    for (const texture of irisTarget.textures) {
+      texture.bind();
+      gl.generateMipmap(gl.TEXTURE_2D);
+    }
     bakeDirty = false;
   };
 
