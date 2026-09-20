@@ -818,10 +818,10 @@ export const IRIS_DEFAULTS = {
   uFurrowInner: 0.65, // the innermost contraction furrow, in width: 1.5 mm from the root
   uFurrowOuter: 0.78, // the outermost, 1 mm from the root
   uFurrowWidth: 0.035, // a furrow's soft half-width in width, about 0.15 mm
-  uFurrowRest: 0.2, // the contraction furrows' depth at the rest pupil (present-only)
-  uFurrowDeepen: 0.6, // how much deeper they are at full dilation (present-only)
-  uCreaseRest: 0.35, // the radial furrows' depth at rest (present-only)
-  uCreaseOpen: 0.4, // how much more they open at full constriction (present-only)
+  uFurrowRest: 0.14, // the contraction furrows' depth at the rest pupil (present-only)
+  uFurrowDeepen: 0.5, // how much deeper they are at full dilation (present-only)
+  uCreaseRest: 0.25, // the radial furrows' depth at rest (present-only)
+  uCreaseOpen: 0.35, // how much more they open at full constriction (present-only)
   uPigmentPatches: 0, // the amber patches' strength; band-iris has none
   uPatchZone: 1, // where the patches lie: 0 toward the pupil, 1 toward the periphery
   uPigmentFreckles: 0.3, // the freckles' density, 1 for a well-freckled iris
