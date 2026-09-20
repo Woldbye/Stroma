@@ -25,6 +25,13 @@ export const IRIS_PALETTES = {
     uEpitheliumColor: [0.22, 0.13, 0.09],
     uRuffShade: 0.02,
     uTissueWhiten: 0.8,
+    uTrabeculaeReach: 0.45,
+    uPigmentPatches: 0,
+    uPatchZone: 1,
+    uPigmentFreckles: 0.3,
+    uNoduleLight: 0.3,
+    uPigmentColor: [0.85, 0.6, 0.25],
+    uFreckleColor: [0.35, 0.18, 0.08],
   },
   /* Central heterochromia: an amber pupillary zone, a rusty collarette bleeding outward, a
      blue-grey ciliary zone, a soft grey limbus, and a deep margin shadow. */
@@ -39,6 +46,12 @@ export const IRIS_PALETTES = {
     uRuffShade: 0.08,
     uTissueWhiten: 0.5,
     uTrabeculaeReach: 0.3,
+    uPigmentPatches: 1,
+    uPatchZone: 1,
+    uPigmentFreckles: 1,
+    uNoduleLight: 0,
+    uPigmentColor: [0.82, 0.55, 0.22],
+    uFreckleColor: [0.4, 0.18, 0.08],
   },
   /* Pale grey-white pupillary zone, a deep blue ciliary zone, a thin dark limbus, almost no
      ruff. */
@@ -52,6 +65,13 @@ export const IRIS_PALETTES = {
     uEpitheliumColor: [0.12, 0.1, 0.12],
     uRuffShade: 0.01,
     uTissueWhiten: 0.8,
+    uTrabeculaeReach: 0.45,
+    uPigmentPatches: 1,
+    uPatchZone: 0,
+    uPigmentFreckles: 0.2,
+    uNoduleLight: 0.2,
+    uPigmentColor: [0.95, 0.7, 0.2],
+    uFreckleColor: [0.8, 0.45, 0.1],
   },
 } as const satisfies Record<string, Palette>;
 

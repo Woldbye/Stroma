@@ -143,6 +143,10 @@ uniform float uBandLight;
 uniform float uFurrowInner;
 uniform float uFurrowOuter;
 uniform float uFurrowWidth;
+uniform float uPigmentPatches;
+uniform float uPatchZone;
+uniform float uPigmentFreckles;
+uniform float uNoduleLight;
 ${COORDINATES}
 /* ======================= primitives ======================= */
 
@@ -491,6 +495,58 @@ float radialFurrows(float t, float w, float outward) {
     return streak * zone * presence;
 }
 
+/* ======================= pigment ======================= */
+
+/* Pigment: melanin in the anterior border layer, written as a density. Amber patches are
+   sparse melanin over a broad area, from a slow noise thresholded softly, lying toward the
+   periphery in one eye and toward the pupil in another. Freckles are dense melanin in small
+   soft spots, scattered by cell, slightly elongated along the fibres. Wölfflin nodules are
+   not pigment at all but pale knots of tissue near the root of light irises, so they go to
+   the tissue field. Returns pigment density in x and nodule lightness in y. */
+#define PATCH_CELLS 10.0
+#define FRECKLE_CELLS 40.0
+#define FRECKLE_ROWS 6.0
+#define SPECK_CELLS 120.0
+#define SPECK_ROWS 16.0
+#define NODULE_CELLS 48.0
+
+float spots(float t, float w, float cellsT, float rows, float seed, float chance, float radius) {
+    vec2 p = vec2(t * cellsT, w * rows);
+    vec2 i = floor(p);
+    vec2 f = p - i;
+    float best = 0.0;
+    for (float dy = -1.0; dy <= 1.0; dy += 1.0) {
+        for (float dx = -1.0; dx <= 1.0; dx += 1.0) {
+            vec2 cell = i + vec2(dx, dy);
+            vec2 id = vec2(mod(cell.x, cellsT), cell.y) + seed;
+            vec2 h = hash22(id);
+            if (h.x > chance) continue;
+            vec2 centre = vec2(dx, dy) + 0.2 + 0.6 * hash22(id + 5.0);
+            vec2 d = (f - centre) / vec2(1.0, 1.6);
+            float size = radius * (0.5 + 1.0 * h.y);
+            // Soft all the way to the centre: a stain in the tissue, not a dot on it.
+            best = max(best, 1.0 - smoothstep(0.0, size, length(d)));
+        }
+    }
+    return best;
+}
+
+vec2 pigment(float t, float w) {
+    float patchZone = mix(1.0 - smoothstep(0.2, 0.5, w), smoothstep(0.5, 0.85, w), uPatchZone);
+    float patches = smoothstep(0.5, 0.85, irisFbm(vec2(t * PATCH_CELLS, w * 4.0), PATCH_CELLS, 103.0));
+    float amber = uPigmentPatches * patches * patchZone;
+    // Freckles: a few larger stains and many tiny specks, clustered where the specks' noise
+    // is dense, in the ciliary zone.
+    float stains = spots(t, w, FRECKLE_CELLS, FRECKLE_ROWS, 107.0, 0.05 * uPigmentFreckles, 0.14);
+    float specks = spots(t, w, SPECK_CELLS, SPECK_ROWS, 113.0, 0.12 * uPigmentFreckles, 0.2)
+                 * smoothstep(0.4, 0.7, irisFbm(vec2(t * 12.0, w * 4.0), 12.0, 117.0));
+    float freckles = max(stains, specks) * smoothstep(0.3, 0.5, w);
+    float density = max(amber * 0.25, freckles * 0.85);
+    float nodules = spots(t, w, NODULE_CELLS, 8.0, 109.0, 0.15, 0.3)
+                  * smoothstep(0.75, 0.85, w) * (1.0 - smoothstep(0.93, 0.98, w));
+    return vec2(density, uNoduleLight * nodules);
+}
+
 /* ======================= composition ======================= */
 
 void main() {
@@ -503,12 +559,13 @@ void main() {
     // Strands brighten and fade along their length.
     float along = 0.5 + 0.7 * irisFbm(vec2(ray.t * 90.0, w * 4.0), 90.0, 61.0);
     float fibres = stromalFibres(ray.t, w, offset);
+    vec2 melanin = pigment(ray.t, w);
     float tissue = 0.5 + fibres + collaretteWreath(ray.t, w, offset)
-                 + uTrabeculaeLight * net.x * along + peripheralBand(ray.t, w, fibres);
+                 + uTrabeculaeLight * net.x * along + peripheralBand(ray.t, w, fibres)
+                 + melanin.y;
     float opening = max(pupillaryRuff(w, ray.t), uCryptDepth * net.y);
     float zone = encodeOffset(offset);
-    float pigment = 0.0;
-    outColor = vec4(saturate(tissue), opening, zone, pigment);
+    outColor = vec4(saturate(tissue), opening, zone, melanin.x);
     outDynamics = vec4(contractionFurrows(ray.t, w), radialFurrows(ray.t, w, offset), 0.0, 1.0);
 }
 `;
@@ -546,6 +603,8 @@ uniform vec3 uLimbalColor;
 uniform float uLimbusStart;
 uniform vec3 uEpitheliumColor;
 uniform float uTissueWhiten;
+uniform vec3 uPigmentColor;
+uniform vec3 uFreckleColor;
 ${COORDINATES}
 /* One-pixel anti-aliased edge at the root; fwidth makes it resolution independent. */
 float discMask(float r) {
@@ -569,6 +628,14 @@ vec3 zoneTones(float offset) {
     vec3 col = mix(uCiliaryColor, uPupillaryColor, pupillary);
     float wreath = offset < 0.0 ? exp(offset / 0.03) : exp(-offset / uCollaretteBleed);
     return mix(col, uCollaretteColor, wreath * uCollaretteTint);
+}
+
+/* Pigment by its density: sparse melanin is amber, light passing through it, dense melanin
+   is dark brown. Laid on the zone tone under the tissue's lightness, since the border layer
+   carries both and the fibres run through a stain. */
+vec3 pigmentLayer(vec3 col, float density) {
+    vec3 melanin = mix(uPigmentColor, uFreckleColor, saturate(density * 2.0 - 1.0));
+    return mix(col, melanin, saturate(density * 2.0));
 }
 
 /* The limbal ring: the root darkening softly under the limbus, over everything, so the
@@ -637,6 +704,8 @@ void main() {
     vec4 dynamics = texture(uIrisDynamics, rest);
 
     vec3 col = zoneTones(decodeOffset(structure.b));
+    // Pigment lies in the border layer with the fibres, so the tissue's lightness runs over it.
+    col = pigmentLayer(col, structure.a);
     col = tissueLayer(col, structure.r);
     col = openingLayer(col, furrowLayer(structure.g, dynamics));
     col = limbusLayer(col, w);
@@ -685,6 +754,12 @@ export const IRIS_DEFAULTS = {
   uFurrowDeepen: 0.45, // how much deeper they are at full dilation (present-only)
   uCreaseRest: 0.2, // the radial furrows' depth at rest (present-only)
   uCreaseOpen: 0.5, // how much more they open at full constriction (present-only)
+  uPigmentPatches: 0, // the amber patches' strength; band-iris has none
+  uPatchZone: 1, // where the patches lie: 0 toward the pupil, 1 toward the periphery
+  uPigmentFreckles: 0.3, // the freckles' density, 1 for a well-freckled iris
+  uNoduleLight: 0.3, // how far Wölfflin nodules lighten the tissue near the root
+  uPigmentColor: [0.85, 0.6, 0.25], // sparse melanin, amber
+  uFreckleColor: [0.35, 0.18, 0.08], // dense melanin, dark brown
   // The palette: band-iris by default, the other presets in iris-palettes.ts.
   uPupillaryColor: [0.5, 0.57, 0.64],
   uCiliaryColor: [0.28, 0.45, 0.62],
@@ -728,4 +803,8 @@ export const IRIS_BAKE_KEYS = [
   'uFurrowInner',
   'uFurrowOuter',
   'uFurrowWidth',
+  'uPigmentPatches',
+  'uPatchZone',
+  'uPigmentFreckles',
+  'uNoduleLight',
 ] as const satisfies readonly (keyof typeof IRIS_DEFAULTS)[];
