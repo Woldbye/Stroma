@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue';
 import { Renderer } from 'ogl';
 import { createIrisScene, type IrisScene } from '@/iris/iris-scene';
 import { IRIS_DEFAULTS } from '@/iris/iris-shaders';
+import { IRIS_PALETTES, type PaletteName } from '@/iris/iris-palettes';
 import { createGpuTimer, measureWall, type GpuTimer } from './gpu-timer';
 import { diffPixels, readPixels } from './pixel-diff';
 
@@ -14,6 +15,8 @@ const SIZES = [160, 256, 512] as const;
 const size = ref<(typeof SIZES)[number]>(256);
 const pupil = ref<number>(IRIS_DEFAULTS.uPupil);
 const debug = ref(IRIS_DEFAULTS.uDebug > 0.5);
+const PALETTE_NAMES = Object.keys(IRIS_PALETTES) as PaletteName[];
+const palette = ref<PaletteName>('band-iris');
 const dpr = window.devicePixelRatio || 1;
 
 const irisContainer = useTemplateRef<HTMLDivElement>('irisContainer');
@@ -190,6 +193,11 @@ onMounted(() => {
 watch(size, applySize);
 watch(pupil, (v) => iris?.setLook('uPupil', v));
 watch(debug, (v) => iris?.setLook('uDebug', v ? 1 : 0));
+watch(palette, (name) => {
+  for (const [key, value] of Object.entries(IRIS_PALETTES[name])) {
+    iris?.setLook(key as keyof typeof IRIS_DEFAULTS, value);
+  }
+});
 
 onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', onVisibility);
@@ -214,6 +222,12 @@ const fmt = (v: number | null, digits = 2) => (v === null ? '–' : v.toFixed(di
         Pupil
         <input v-model.number="pupil" type="range" min="0.12" max="0.7" step="0.01" />
         <span class="w-10">{{ pupil.toFixed(2) }}</span>
+      </label>
+      <label class="flex items-center gap-2">
+        Palette
+        <select v-model="palette" class="rounded border border-gray-300 px-2 py-1">
+          <option v-for="name in PALETTE_NAMES" :key="name" :value="name">{{ name }}</option>
+        </select>
       </label>
       <label class="flex items-center gap-2">
         <input v-model="debug" type="checkbox" />

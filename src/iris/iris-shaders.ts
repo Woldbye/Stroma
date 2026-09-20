@@ -11,8 +11,8 @@
    The bake's four fields, one per channel. Every layer is one of two substances, the pale
    tissue of the anterior border layer and the dark pigment epithelium showing through where
    it thins, so no layer paints colour: red is tissue lightness, 0.5 the zone's own tone;
-   green is opening depth, how much epithelium shows; blue is zone membership, 1 pupillary
-   and 0 ciliary; alpha is pigment. */
+   green is opening depth, how much epithelium shows; blue is the signed offset from the
+   collarette's path, which is zone membership; alpha is pigment. */
 
 export const IRIS_VERT = `#version 300 es
 in vec2 position;
@@ -91,6 +91,17 @@ vec2 restPoint(Ray ray, float w) {
     float margin = REST_PUPIL * marginWobble(ray.t);
     return uPupilCentre + ray.dir * (margin + w * (ray.root - margin));
 }
+
+/* The signed offset from the collarette's path, in width units and positive outward, rides
+   in the bake's blue channel, encoded linearly over ±OFFSET_RANGE with 0.5 on the path. The
+   sign is the zone; the magnitude places the wreath, its colour bleed and the crypt rows. */
+#define OFFSET_RANGE 0.6
+float encodeOffset(float offset) {
+    return saturate(0.5 + offset / (2.0 * OFFSET_RANGE));
+}
+float decodeOffset(float code) {
+    return (code - 0.5) * (2.0 * OFFSET_RANGE);
+}
 `;
 
 export const IRIS_BAKE_FRAG = `#version 300 es
@@ -104,6 +115,7 @@ uniform vec2 uResolution;
 
 /* ---- structure ---- */
 uniform float uCollarette;
+uniform float uCollaretteZigzag;
 uniform float uRuffDepth;
 uniform float uRuffCrenation;
 uniform float uRuffShade;
@@ -117,7 +129,7 @@ float hash21(vec2 p) {
 }
 
 /* Value noise around the circle: t is the turn in 0..1, periodic by wrapping the cell index,
-   so no seam blend is needed. Cells must be whole. */
+   so no seam blend is needed. Cells must be whole. Smooth, or linear for a polyline. */
 float turnNoise(float t, float cells, float seed) {
     float x = t * cells;
     float ix = floor(x);
@@ -126,6 +138,14 @@ float turnNoise(float t, float cells, float seed) {
     float a = hash21(vec2(mod(ix, cells), seed));
     float b = hash21(vec2(mod(ix + 1.0, cells), seed));
     return mix(a, b, fx);
+}
+
+float turnPolyline(float t, float cells, float seed) {
+    float x = t * cells;
+    float ix = floor(x);
+    float a = hash21(vec2(mod(ix, cells), seed));
+    float b = hash21(vec2(mod(ix + 1.0, cells), seed));
+    return mix(a, b, x - ix);
 }
 
 /* ======================= layers ======================= */
@@ -148,10 +168,30 @@ float pupillaryRuff(float w, float t) {
     return max(frill, shadow);
 }
 
-/* The zones: pupillary inside the collarette, ciliary outside, with a hair of softness at the
-   boundary. The collarette's own path comes with its step. */
-float zoneOf(float w) {
-    return 1.0 - smoothstep(uCollarette - 0.004, uCollarette + 0.004, w);
+/* The collarette's path: the boundary between the zones, a zigzag polyline around the pupil
+   with about fifty vertices per turn that alternate inward and outward by random amounts up
+   to a tenth of the width, on a slower drift of a few lobes, with a finer raggedness on top.
+   The vertex count is even so the alternation wraps. */
+#define COLLARETTE_VERTICES 48.0
+#define COLLARETTE_LOBES 5.0
+#define COLLARETTE_RAGGED 90.0
+
+float collaretteZigzag(float t) {
+    // The vertices are spaced unevenly: a smooth warp of the turn moves them about.
+    float warped = t + (turnNoise(t, 24.0, 19.0) - 0.5) * (1.4 / COLLARETTE_VERTICES);
+    float x = warped * COLLARETTE_VERTICES;
+    float ix = floor(x);
+    float i0 = mod(ix, COLLARETTE_VERTICES);
+    float i1 = mod(ix + 1.0, COLLARETTE_VERTICES);
+    float a = (0.15 + 0.85 * hash21(vec2(i0, 11.0))) * (mod(i0, 2.0) * 2.0 - 1.0);
+    float b = (0.15 + 0.85 * hash21(vec2(i1, 11.0))) * (mod(i1, 2.0) * 2.0 - 1.0);
+    return mix(a, b, x - ix);
+}
+
+float collarettePath(float t) {
+    float drift = turnNoise(t, COLLARETTE_LOBES, 13.0) * 2.0 - 1.0;
+    float ragged = turnPolyline(t, COLLARETTE_RAGGED, 17.0) * 2.0 - 1.0;
+    return uCollarette + uCollaretteZigzag * (collaretteZigzag(t) + 0.5 * drift + 0.15 * ragged);
 }
 
 /* ======================= composition ======================= */
@@ -163,7 +203,7 @@ void main() {
 
     float tissue = 0.5;
     float opening = pupillaryRuff(w, ray.t);
-    float zone = zoneOf(w);
+    float zone = encodeOffset(w - collarettePath(ray.t));
     float pigment = 0.0;
     outColor = vec4(tissue, opening, zone, pigment);
 }
@@ -186,7 +226,15 @@ uniform vec3 uPupilColor;
 uniform float uDebug;
 
 /* ---- palette ---- */
+uniform vec3 uPupillaryColor;
+uniform vec3 uCiliaryColor;
+uniform vec3 uCollaretteColor;
+uniform float uCollaretteTint;
+uniform float uCollaretteBleed;
+uniform vec3 uLimbalColor;
+uniform float uLimbusStart;
 uniform vec3 uEpitheliumColor;
+uniform float uTissueWhiten;
 ${COORDINATES}
 /* One-pixel anti-aliased edge at the root; fwidth makes it resolution independent. */
 float discMask(float r) {
@@ -202,14 +250,28 @@ float isoline(float x) {
 
 /* ======================= layers ======================= */
 
-/* Flat zone tones for now, the pupillary zone the darker; the palette comes with its step. */
-vec3 zoneTones(vec4 structure) {
-    return mix(vec3(0.62), vec3(0.48), structure.b);
+/* The zone base tones: the pupillary zone inside the collarette's path, the ciliary zone
+   outside, the collarette's own colour strongest on the path and bleeding outward along the
+   tissue, and the limbal ring darkening softly toward the root. Smooth fields; every texture
+   above them is tissue or opening. */
+vec3 zoneTones(float offset, float w) {
+    float pupillary = 1.0 - smoothstep(-0.02, 0.02, offset);
+    vec3 col = mix(uCiliaryColor, uPupillaryColor, pupillary);
+    float wreath = offset < 0.0 ? exp(offset / 0.03) : exp(-offset / uCollaretteBleed);
+    col = mix(col, uCollaretteColor, wreath * uCollaretteTint);
+    return mix(col, uLimbalColor, smoothstep(uLimbusStart, 1.0, w));
+}
+
+/* Tissue lightness over the zone tone: below the zone's own tone it darkens, above it goes
+   toward white, so bright fibres are pale in the zone's hue. */
+vec3 tissueLayer(vec3 col, float tissue) {
+    float l = tissue * 2.0;
+    return l < 1.0 ? col * l : mix(col, vec3(1.0), (l - 1.0) * uTissueWhiten);
 }
 
 /* Openings onto the pigment epithelium: the ruff now, the crypts and furrows later. */
-vec3 openingLayer(vec3 col, vec4 structure) {
-    return mix(col, uEpitheliumColor, structure.g);
+vec3 openingLayer(vec3 col, float opening) {
+    return mix(col, uEpitheliumColor, opening);
 }
 
 /* The pupil: the opening inside the margin, one pixel soft at any size. */
@@ -219,14 +281,13 @@ float pupilMask(float w) {
 }
 
 /* The coordinate check: a line every tenth of the width and every fifteen degrees from the
-   live coordinates, and the zone boundary in gold from the bake, so the gold ring and the
+   live coordinates, and the collarette's path in gold from the bake, so the gold line and the
    zone tone show the remap while the grid shows what it should be. */
 vec3 debugLayer(vec3 col, vec4 structure, float w, float t) {
     float lines = max(isoline(w * 10.0), isoline(t * 24.0));
     col = mix(col, vec3(0.15), lines * 0.6);
-    float boundary =
-        1.0 - smoothstep(0.0, fwidth(structure.b) * 2.0, abs(structure.b - 0.5));
-    return mix(col, vec3(1.0, 0.8, 0.3), boundary);
+    float path = 1.0 - smoothstep(0.0, fwidth(structure.b) * 2.0, abs(structure.b - 0.5));
+    return mix(col, vec3(1.0, 0.8, 0.3), path);
 }
 
 /* ======================= composition ======================= */
@@ -240,8 +301,9 @@ void main() {
     float w = widthOf(ray, uPupil);
     vec4 structure = texture(uIris, restPoint(ray, w) * 0.5 + 0.5);
 
-    vec3 col = zoneTones(structure);
-    col = openingLayer(col, structure);
+    vec3 col = zoneTones(decodeOffset(structure.b), w);
+    col = tissueLayer(col, structure.r);
+    col = openingLayer(col, structure.g);
     col = mix(col, debugLayer(col, structure, w, ray.t), uDebug);
     col = mix(col, uPupilColor, pupilMask(w));
 
@@ -257,17 +319,28 @@ export const IRIS_DEFAULTS = {
   uPupilCentre: [0.02, 0.02], // the pupil's offset from the iris centre, in iris radii: nasal and superior; x flips for the other eye
   uPupilWobble: 0.006, // the margin's departure from a circle, as a fraction of its radius
   uPupilColor: [0, 0, 0],
-  uCollarette: 0.3, // the collarette's position across the width, 0 at the margin, 1 at the root
+  uCollarette: 0.35, // the collarette's mean position across the width, 1.5 mm from the margin
+  uCollaretteZigzag: 0.08, // the zigzag's swing either side of the mean, in width
   uRuffDepth: 0.025, // the frill's depth in width, about 0.1 mm
   uRuffCrenation: 0.5, // how far the frill's edge swings either side of its depth, as a fraction of it
-  uRuffShade: 0.05, // how far the margin shadow reaches in width before it has faded to a third
-  uEpitheliumColor: [0.22, 0.13, 0.09], // the pigment epithelium, seen through every opening: band-iris's dark brown
+  uRuffShade: 0.02, // how far the margin shadow reaches in width before it has faded to a third
+  // The palette: band-iris by default, the other presets in iris-palettes.ts.
+  uPupillaryColor: [0.58, 0.64, 0.7],
+  uCiliaryColor: [0.28, 0.45, 0.62],
+  uCollaretteColor: [0.8, 0.85, 0.9],
+  uCollaretteTint: 0, // how strongly the collarette's own colour shows; 0 leaves it as tissue
+  uCollaretteBleed: 0.1, // how far outward the collarette's colour bleeds, in width
+  uLimbalColor: [0.1, 0.14, 0.2],
+  uLimbusStart: 0.86, // where the limbal darkening begins, in width
+  uEpitheliumColor: [0.22, 0.13, 0.09], // the pigment epithelium, seen through every opening
+  uTissueWhiten: 0.8, // how far the brightest tissue goes toward white
   uDebug: 1, // the coordinate lines; 0 hides them
 } as const;
 
 /** Knobs the bake reads; a change to any of them re-bakes. The rest are present-only. */
 export const IRIS_BAKE_KEYS = [
   'uCollarette',
+  'uCollaretteZigzag',
   'uPupilCentre',
   'uPupilWobble',
   'uRuffDepth',
