@@ -133,6 +133,10 @@ uniform float uCryptFeather;
 uniform float uCryptDepth;
 uniform float uTrabeculaeLight;
 uniform float uTrabeculaeReach;
+uniform float uBandReach;
+uniform float uBandSoftness;
+uniform float uBandBite;
+uniform float uBandLight;
 ${COORDINATES}
 /* ======================= primitives ======================= */
 
@@ -419,6 +423,29 @@ vec2 trabeculaeAndCrypts(float t, float w, float outward) {
     return vec2(strand * reach * inside, crypt);
 }
 
+/* ======================= periphery ======================= */
+
+/* The peripheral ciliary zone: the soft, cloudy, pale band inside the limbus, where the
+   anterior border layer thickens toward the root. Its inner edge reaches inward by a few
+   slow lobes with finer bays on them, so the band thickens and thins around the circle; the
+   edge is soft, its softness varying too, and bright fibres push it outward so it is ragged
+   rather than drawn. Inside, the band is cloudy by a slow noise, and the fibres and strands
+   beneath it show through since it only lightens the tissue. The limbal ring darkens it at
+   the root in the present pass, with no edge anywhere. */
+#define BAND_LOBES 3.0
+#define BAND_BAYS 8.0
+#define BAND_SOFT_CELLS 5.0
+
+float peripheralBand(float t, float w, float fibres) {
+    float reach = 0.7 * turnNoise(t, BAND_LOBES, 71.0) + 0.3 * turnNoise(t, BAND_BAYS, 73.0);
+    float inner = 1.0 - uBandReach * (0.25 + 0.75 * reach);
+    float softness = uBandSoftness * (0.5 + turnNoise(t, BAND_SOFT_CELLS, 79.0));
+    float edge = inner + uBandBite * max(fibres, 0.0);
+    float band = smoothstep(edge - softness, edge + softness, w);
+    float cloud = 0.3 + 1.4 * irisFbm(vec2(t * 40.0, w * 10.0), 40.0, 83.0);
+    return uBandLight * band * cloud;
+}
+
 /* ======================= composition ======================= */
 
 void main() {
@@ -430,8 +457,9 @@ void main() {
     vec2 net = trabeculaeAndCrypts(ray.t, w, w - collaretteMean(ray.t));
     // Strands brighten and fade along their length.
     float along = 0.5 + 0.7 * irisFbm(vec2(ray.t * 90.0, w * 4.0), 90.0, 61.0);
-    float tissue = 0.5 + stromalFibres(ray.t, w, offset) + collaretteWreath(ray.t, w, offset)
-                 + uTrabeculaeLight * net.x * along;
+    float fibres = stromalFibres(ray.t, w, offset);
+    float tissue = 0.5 + fibres + collaretteWreath(ray.t, w, offset)
+                 + uTrabeculaeLight * net.x * along + peripheralBand(ray.t, w, fibres);
     float opening = max(pupillaryRuff(w, ray.t), uCryptDepth * net.y);
     float zone = encodeOffset(offset);
     float pigment = 0.0;
@@ -481,14 +509,18 @@ float isoline(float x) {
 /* ======================= layers ======================= */
 
 /* The zone base tones: the pupillary zone inside the collarette's path, the ciliary zone
-   outside, the collarette's own colour strongest on the path and bleeding outward along the
-   tissue, and the limbal ring darkening softly toward the root. Smooth fields; every texture
-   above them is tissue or opening. */
-vec3 zoneTones(float offset, float w) {
+   outside, and the collarette's own colour strongest on the path and bleeding outward along
+   the tissue. Smooth fields; every texture above them is tissue or opening. */
+vec3 zoneTones(float offset) {
     float pupillary = 1.0 - smoothstep(-0.02, 0.02, offset);
     vec3 col = mix(uCiliaryColor, uPupillaryColor, pupillary);
     float wreath = offset < 0.0 ? exp(offset / 0.03) : exp(-offset / uCollaretteBleed);
-    col = mix(col, uCollaretteColor, wreath * uCollaretteTint);
+    return mix(col, uCollaretteColor, wreath * uCollaretteTint);
+}
+
+/* The limbal ring: the root darkening softly under the limbus, over everything, so the
+   peripheral band fades into it with no edge. */
+vec3 limbusLayer(vec3 col, float w) {
     return mix(col, uLimbalColor, smoothstep(uLimbusStart, 1.0, w));
 }
 
@@ -534,9 +566,10 @@ void main() {
     float w = widthOf(ray, uPupil);
     vec4 structure = texture(uIris, restPoint(ray, w) * 0.5 + 0.5);
 
-    vec3 col = zoneTones(decodeOffset(structure.b), w);
+    vec3 col = zoneTones(decodeOffset(structure.b));
     col = tissueLayer(col, structure.r);
     col = openingLayer(col, structure.g);
+    col = limbusLayer(col, w);
     col = mix(col, debugLayer(col, structure, w, ray.t), uDebug);
     col = mix(col, uPupilColor, pupilMask(w));
 
@@ -571,6 +604,10 @@ export const IRIS_DEFAULTS = {
   uCryptDepth: 0.7, // how much epithelium shows at a crypt's floor; below 1 keeps fibres in view
   uTrabeculaeLight: 0.35, // how far the trabeculae lighten the tissue
   uTrabeculaeReach: 0.45, // how far outward from the wreath the web fades out, in width
+  uBandReach: 0.4, // how far in from the root the pale band reaches at its widest, in width
+  uBandSoftness: 0.08, // the base softness of its inner edge, in width; varies around this
+  uBandBite: 0.15, // how far bright fibres push the band's edge outward
+  uBandLight: 0.45, // how far the band lightens the tissue
   // The palette: band-iris by default, the other presets in iris-palettes.ts.
   uPupillaryColor: [0.5, 0.57, 0.64],
   uCiliaryColor: [0.28, 0.45, 0.62],
@@ -578,7 +615,7 @@ export const IRIS_DEFAULTS = {
   uCollaretteTint: 0, // how strongly the collarette's own colour shows; 0 leaves it as tissue
   uCollaretteBleed: 0.1, // how far outward the collarette's colour bleeds, in width
   uLimbalColor: [0.1, 0.14, 0.2],
-  uLimbusStart: 0.86, // where the limbal darkening begins, in width
+  uLimbusStart: 0.9, // where the limbal darkening begins, in width
   uEpitheliumColor: [0.22, 0.13, 0.09], // the pigment epithelium, seen through every opening
   uTissueWhiten: 0.8, // how far the brightest tissue goes toward white
   uDebug: 1, // the coordinate lines; 0 hides them
@@ -607,4 +644,8 @@ export const IRIS_BAKE_KEYS = [
   'uCryptDepth',
   'uTrabeculaeLight',
   'uTrabeculaeReach',
+  'uBandReach',
+  'uBandSoftness',
+  'uBandBite',
+  'uBandLight',
 ] as const satisfies readonly (keyof typeof IRIS_DEFAULTS)[];
