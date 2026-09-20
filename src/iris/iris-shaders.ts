@@ -263,9 +263,12 @@ float collarettePath(float t) {
 #define FIBRE_ACROSS 3.0
 #define FIBRE_WAVE_CELLS 24.0
 
-float fibreStreaks(float t, float w, float cellsT, float seed, float wander) {
-    // The wander: a slow noise, two cells across the width, so the waves are long and gentle.
-    float wave = irisFbm(vec2(t * FIBRE_WAVE_CELLS, w * 2.0), FIBRE_WAVE_CELLS, seed + 3.0) - 0.5;
+/* The wander: a slow noise, two cells across the width, so the waves are long and gentle. */
+float fibreWave(float t, float w, float seed) {
+    return irisFbm(vec2(t * FIBRE_WAVE_CELLS, w * 2.0), FIBRE_WAVE_CELLS, seed) - 0.5;
+}
+
+float fibreStreaks(float t, float w, float cellsT, float seed, float wave, float wander) {
     float tw = t + wave * wander / cellsT * 4.0;
     float n = irisFbm(vec2(tw * cellsT, w * FIBRE_ACROSS), cellsT, seed);
     float ridge = saturate(1.0 - abs(n - 0.5) * 2.5);
@@ -275,8 +278,10 @@ float fibreStreaks(float t, float w, float cellsT, float seed, float wander) {
 float stromalFibres(float t, float w, float offset) {
     float pupillary = 1.0 - smoothstep(-0.03, 0.03, offset);
     float fade = 1.0 - uFibreFade * smoothstep(0.3, 0.9, w);
-    float fine = fibreStreaks(t, w, FIBRE_FINE, 41.0, uFibreWave);
-    float bundles = fibreStreaks(t, w, FIBRE_BUNDLES, 43.0, uFibreWave);
+    // One wander for both scales: the fine fibres ride the bundles they are part of.
+    float wave = fibreWave(t, w, 44.0);
+    float fine = fibreStreaks(t, w, FIBRE_FINE, 41.0, wave, uFibreWave);
+    float bundles = fibreStreaks(t, w, FIBRE_BUNDLES, 43.0, wave, uFibreWave);
     // Bundles are patchy: brighter and thicker here, thinner there, along and across.
     float patchy = 0.5 + irisFbm(vec2(t * 48.0, w * 3.0), 48.0, 47.0);
     float light = fine * pupillary * uFibreFine + bundles * patchy * mix(1.0, 0.6, pupillary) * fade;
@@ -380,16 +385,21 @@ float cryptOpen(float ring, float column, float columns) {
 
 /* Returns the trabeculae in x and the crypt depth in y. */
 vec2 trabeculaeAndCrypts(float t, float w, float outward) {
+    // The web fades out by its reach and stops one ring inside the wreath: skip the rest.
+    if (outward > uTrabeculaeReach + 0.12 || outward < -(NET_RINGS_IN + 0.5) * uCryptRing / 1.6) {
+        return vec2(0.0);
+    }
+
     float r = REST_PUPIL + w * (1.0 - REST_PUPIL);
     float ringHere = floor(ringSpace(outward) / uCryptRing);
 
-    /* Pass 1: the owning seed. Rings are taller than the arc a column spans, so the nearest
-       seed can sit two rings away. */
+    /* Pass 1: the owning seed. Seeds stray little along the radius, so the owner sits in this
+       ring or the next either side. */
     float md = 1e9;
     vec2 mr = vec2(0.0);
     float owner = 0.0;
     float ownerColumn = 0.0;
-    for (float dj = -2.0; dj <= 2.0; dj += 1.0) {
+    for (float dj = -1.0; dj <= 1.0; dj += 1.0) {
         float j = ringHere + dj;
         float columns = netColumns(j);
         float column = floor(t * columns);
@@ -410,7 +420,7 @@ vec2 trabeculaeAndCrypts(float t, float w, float outward) {
     float strand = 0.0;
     float nearest = 1e9;
     float widthHere = 0.7 + 0.6 * irisFbm(vec2(t * 120.0, w * 6.0), 120.0, 59.0);
-    for (float dj = -2.0; dj <= 2.0; dj += 1.0) {
+    for (float dj = -1.0; dj <= 1.0; dj += 1.0) {
         float j = owner + dj;
         float columns = netColumns(j);
         float column = floor(t * columns);
@@ -489,7 +499,7 @@ float contractionFurrows(float t, float w) {
 
 float radialFurrows(float t, float w, float outward) {
     // Straighter than the fibres: a crease follows the stretch, not the bundles' wander.
-    float streak = pow(fibreStreaks(t, w, CREASE_COUNT, 97.0, 0.15), 3.0);
+    float streak = pow(fibreStreaks(t, w, CREASE_COUNT, 97.0, fibreWave(t, w, 100.0), 0.15), 3.0);
     float zone = smoothstep(0.05, 0.2, outward) * (1.0 - smoothstep(0.45, 0.65, outward));
     float presence = smoothstep(0.45, 0.7, turnNoise(t, 16.0, 101.0));
     return streak * zone * presence;
@@ -553,6 +563,16 @@ void main() {
     vec2 p = discPoint(vUv);
     Ray ray = rayOf(p);
     float w = widthOf(ray, REST_PUPIL);
+
+    /* Nothing samples the bake inside the rest pupil or beyond the root, since the present
+       pass maps every screen pixel between the live margin and the root back into that band;
+       a few texels of margin feed the mip levels and the bilinear edge. */
+    if (w < -0.03 || ray.dist > ray.root + 0.02) {
+        outColor = vec4(0.5, w < 0.0 ? 1.0 : 0.0, encodeOffset(w - uCollarette), 0.0);
+        outDynamics = vec4(0.0, 0.0, 0.0, 1.0);
+        return;
+    }
+
     float offset = w - collarettePath(ray.t);
 
     vec2 net = trabeculaeAndCrypts(ray.t, w, w - collaretteMean(ray.t));
