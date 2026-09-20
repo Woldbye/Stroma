@@ -38,6 +38,7 @@ export const IRIS_PALETTES = {
     uEpitheliumColor: [0.16, 0.09, 0.05],
     uRuffShade: 0.08,
     uTissueWhiten: 0.5,
+    uTrabeculaeReach: 0.3,
   },
   /* Pale grey-white pupillary zone, a deep blue ciliary zone, a thin dark limbus, almost no
      ruff. */

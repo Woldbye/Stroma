@@ -126,6 +126,13 @@ uniform float uFibreWave;
 uniform float uFibreSharpness;
 uniform float uCollaretteWidth;
 uniform float uCollaretteLight;
+uniform float uCryptRing;
+uniform float uCryptJitter;
+uniform float uCryptFraction;
+uniform float uCryptFeather;
+uniform float uCryptDepth;
+uniform float uTrabeculaeLight;
+uniform float uTrabeculaeReach;
 ${COORDINATES}
 /* ======================= primitives ======================= */
 
@@ -218,10 +225,16 @@ float collaretteZigzag(float t) {
     return mix(a, b, x - ix);
 }
 
-float collarettePath(float t) {
+/* The path's slow mean, without the zigzag: what the crypt rows are measured from, so the
+   cells sit between the spikes rather than following them. */
+float collaretteMean(float t) {
     float drift = turnNoise(t, COLLARETTE_LOBES, 13.0) * 2.0 - 1.0;
+    return uCollarette + uCollaretteZigzag * 0.5 * drift;
+}
+
+float collarettePath(float t) {
     float ragged = turnPolyline(t, COLLARETTE_RAGGED, 17.0) * 2.0 - 1.0;
-    return uCollarette + uCollaretteZigzag * (collaretteZigzag(t) + 0.5 * drift + 0.15 * ragged);
+    return collaretteMean(t) + uCollaretteZigzag * (collaretteZigzag(t) + 0.15 * ragged);
 }
 
 /* The stromal fibres: the radial streaks of the anterior border layer, collagen bundles
@@ -274,6 +287,138 @@ float collaretteWreath(float t, float w, float offset) {
     return uCollaretteLight * ridge * along * grain;
 }
 
+/* ======================= trabeculae and crypts ======================= */
+
+/* The trabeculae and the crypts of Fuchs are one structure: the anterior border layer's
+   collagen bundles arch around the openings between them. A Voronoi web on a polar grid
+   measured from the collarette's path, after Iryx's net. Rings step outward from the path,
+   ring 0 holding the large crypts just outside the wreath, and two rings step inward for the
+   smaller crypts of the pupillary zone; rings are taller than their cells are wide, so the
+   cells are lens-shaped and radially elongated. Each ring has a whole number of columns
+   around the circle, multiplying outward, so a strand leaving the wreath forks as it goes.
+   Seeds jitter inside their cells. Distances are taken in the disc's frame, arc around and
+   radius outward, so walls are true bisectors. The walls are the trabeculae, feathered and
+   patchy; a fraction of the cells are open, and inside them the tissue is thin so the
+   epithelium shows, darkening away from the walls with fibres still running through. */
+
+#define NET_COLUMNS 56.0
+#define NET_SPLIT 1.4
+#define NET_SEED 41.7
+#define NET_RINGS_IN 1.0
+#define NET_RADIAL_WIDTH 0.025
+#define NET_CROSS_WIDTH 0.008
+#define NET_THINNING 0.7
+
+vec2 hash22(vec2 p) {
+    float a = hash21(p);
+    return vec2(a, hash21(p + a + 7.31));
+}
+
+/* Rings in a stretched radial coordinate: shorter inside the wreath, shrinking outward. */
+float ringSpace(float outward) {
+    if (outward < 0.0) return outward * 1.6;
+    if (outward < uCryptRing) return outward;
+    return uCryptRing + (outward - uCryptRing) * 1.3;
+}
+
+float ringSpaceInverse(float s) {
+    if (s < 0.0) return s / 1.6;
+    if (s < uCryptRing) return s;
+    return uCryptRing + (s - uCryptRing) / 1.3;
+}
+
+/* Whole, so the ring wraps without a seam. */
+float netColumns(float ring) {
+    if (ring < 0.0) return floor(NET_COLUMNS * 1.5 + 0.5);
+    return floor(NET_COLUMNS * pow(NET_SPLIT, ring) + 0.5);
+}
+
+/* The seed of column c in ring j as an offset from the point, in the disc's frame: arc
+   around at the point's radius, and radial in disc radii. */
+vec2 netSeedOffset(float j, float c, float columns, float t, float outward, float r) {
+    vec2 h = hash22(vec2(mod(c, columns), j) + NET_SEED);
+    // Seeds stray mostly around the circle, little along the radius, so the walls between
+    // neighbours in a ring run radially, as the trabeculae do.
+    vec2 jitter = 0.5 + (h - 0.5) * uCryptJitter * vec2(1.0, 0.35);
+    float dt = (c + jitter.x) / columns - t;
+    float seedOutward = ringSpaceInverse((j + jitter.y) * uCryptRing);
+    return vec2(dt * 2.0 * PI * r, (seedOutward - outward) * (1.0 - REST_PUPIL));
+}
+
+/* Width of the wall between a cell in ring a and one in ring b, in disc radii; 0 hides it.
+   Radial walls are the trabeculae proper, thick at the wreath and thinning outward; the
+   arches between rings are slighter. The wall between ring -1 and ring 0 lies under the
+   wreath, drawn by its own layer. */
+float netWallWidth(float a, float b) {
+    float lo = min(a, b);
+    // Inside the wreath the pupillary zone has crypts but no web: only its fibres.
+    if (lo < 0.0) return 0.0;
+    if (a == b) return NET_RADIAL_WIDTH * pow(NET_THINNING, a);
+    return NET_CROSS_WIDTH * pow(NET_THINNING, lo);
+}
+
+/* Which cells are open: a fraction per ring, largest just outside the wreath, sparse
+   further out and inside. */
+float cryptOpen(float ring, float column, float columns) {
+    float fraction = ring == 0.0 ? 0.55 : (ring == 1.0 ? 0.3 : (ring < 0.0 ? 0.15 : 0.12));
+    return step(hash21(vec2(mod(column, columns), ring) + 3.0 * NET_SEED), fraction * uCryptFraction);
+}
+
+/* Returns the trabeculae in x and the crypt depth in y. */
+vec2 trabeculaeAndCrypts(float t, float w, float outward) {
+    float r = REST_PUPIL + w * (1.0 - REST_PUPIL);
+    float ringHere = floor(ringSpace(outward) / uCryptRing);
+
+    /* Pass 1: the owning seed. Rings are taller than the arc a column spans, so the nearest
+       seed can sit two rings away. */
+    float md = 1e9;
+    vec2 mr = vec2(0.0);
+    float owner = 0.0;
+    float ownerColumn = 0.0;
+    for (float dj = -2.0; dj <= 2.0; dj += 1.0) {
+        float j = ringHere + dj;
+        float columns = netColumns(j);
+        float column = floor(t * columns);
+        for (float dc = -2.0; dc <= 2.0; dc += 1.0) {
+            vec2 rr = netSeedOffset(j, column + dc, columns, t, outward, r);
+            float d = dot(rr, rr);
+            if (d < md) {
+                md = d;
+                mr = rr;
+                owner = j;
+                ownerColumn = column + dc;
+            }
+        }
+    }
+
+    /* Pass 2: every wall of the owner's cell. The strongest wall is the strand; the nearest
+       wall's distance shapes the crypt inside. */
+    float strand = 0.0;
+    float nearest = 1e9;
+    float widthHere = 0.7 + 0.6 * irisFbm(vec2(t * 120.0, w * 6.0), 120.0, 59.0);
+    for (float dj = -2.0; dj <= 2.0; dj += 1.0) {
+        float j = owner + dj;
+        float columns = netColumns(j);
+        float column = floor(t * columns);
+        float width = netWallWidth(owner, j) * widthHere;
+        for (float dc = -3.0; dc <= 3.0; dc += 1.0) {
+            vec2 rr = netSeedOffset(j, column + dc, columns, t, outward, r);
+            vec2 diff = rr - mr;
+            if (dot(diff, diff) < 1e-8) continue;
+            float d = dot(0.5 * (mr + rr), normalize(diff));
+            nearest = min(nearest, d);
+            // A soft bump across the wall: a bundle with feathered flanks, not a line.
+            if (width > 0.0) strand = max(strand, pow(1.0 - smoothstep(0.0, width, d), 1.5));
+        }
+    }
+
+    float reach = 1.0 - smoothstep(uTrabeculaeReach - 0.15, uTrabeculaeReach + 0.1, outward);
+    float inside = owner < -NET_RINGS_IN ? 0.0 : 1.0;
+    float open = cryptOpen(owner, ownerColumn, netColumns(owner)) * inside;
+    float crypt = open * smoothstep(0.0, uCryptFeather, nearest) * reach;
+    return vec2(strand * reach * inside, crypt);
+}
+
 /* ======================= composition ======================= */
 
 void main() {
@@ -282,8 +427,12 @@ void main() {
     float w = widthOf(ray, REST_PUPIL);
     float offset = w - collarettePath(ray.t);
 
-    float tissue = 0.5 + stromalFibres(ray.t, w, offset) + collaretteWreath(ray.t, w, offset);
-    float opening = pupillaryRuff(w, ray.t);
+    vec2 net = trabeculaeAndCrypts(ray.t, w, w - collaretteMean(ray.t));
+    // Strands brighten and fade along their length.
+    float along = 0.5 + 0.7 * irisFbm(vec2(ray.t * 90.0, w * 4.0), 90.0, 61.0);
+    float tissue = 0.5 + stromalFibres(ray.t, w, offset) + collaretteWreath(ray.t, w, offset)
+                 + uTrabeculaeLight * net.x * along;
+    float opening = max(pupillaryRuff(w, ray.t), uCryptDepth * net.y);
     float zone = encodeOffset(offset);
     float pigment = 0.0;
     outColor = vec4(saturate(tissue), opening, zone, pigment);
@@ -350,9 +499,12 @@ vec3 tissueLayer(vec3 col, float tissue) {
     return l < 1.0 ? col * l : mix(col, vec3(1.0), (l - 1.0) * uTissueWhiten);
 }
 
-/* Openings onto the pigment epithelium: the ruff now, the crypts and furrows later. */
+/* Openings onto the pigment epithelium. The ruff is the epithelium itself, folded into
+   view; a crypt shows it through the thin stroma left in the opening, which keeps the zone's
+   hue, so a blue eye's crypts are navy and an amber zone's are brown. */
 vec3 openingLayer(vec3 col, float opening) {
-    return mix(col, uEpitheliumColor, opening);
+    vec3 seen = mix(col * 0.3, uEpitheliumColor, smoothstep(0.75, 1.0, opening));
+    return mix(col, seen, opening);
 }
 
 /* The pupil: the opening inside the margin, one pixel soft at any size. */
@@ -412,6 +564,13 @@ export const IRIS_DEFAULTS = {
   uFibreSharpness: 4, // how narrow the bright cores are; higher is thinner streaks
   uCollaretteWidth: 0.07, // the wreath's visible width in width units, about 0.3 mm
   uCollaretteLight: 0.3, // how far the wreath lightens the tissue on its crest
+  uCryptRing: 0.2, // height of the ring of cells just outside the wreath, in width
+  uCryptJitter: 0.9, // how far seeds stray from their cell centres; 0 is a regular lattice
+  uCryptFraction: 1, // scales the fraction of cells that are open crypts
+  uCryptFeather: 0.05, // how far into a crypt the darkening takes to reach full depth, in disc radii
+  uCryptDepth: 0.7, // how much epithelium shows at a crypt's floor; below 1 keeps fibres in view
+  uTrabeculaeLight: 0.35, // how far the trabeculae lighten the tissue
+  uTrabeculaeReach: 0.45, // how far outward from the wreath the web fades out, in width
   // The palette: band-iris by default, the other presets in iris-palettes.ts.
   uPupillaryColor: [0.5, 0.57, 0.64],
   uCiliaryColor: [0.28, 0.45, 0.62],
@@ -441,4 +600,11 @@ export const IRIS_BAKE_KEYS = [
   'uFibreSharpness',
   'uCollaretteWidth',
   'uCollaretteLight',
+  'uCryptRing',
+  'uCryptJitter',
+  'uCryptFraction',
+  'uCryptFeather',
+  'uCryptDepth',
+  'uTrabeculaeLight',
+  'uTrabeculaeReach',
 ] as const satisfies readonly (keyof typeof IRIS_DEFAULTS)[];
