@@ -318,7 +318,14 @@ float collaretteWreath(float t, float w, float offset) {
    Seeds jitter inside their cells. Distances are taken in the disc's frame, arc around and
    radius outward, so walls are true bisectors. The walls are the trabeculae, feathered and
    patchy; a fraction of the cells are open, and inside them the tissue is thin so the
-   epithelium shows, darkening away from the walls with fibres still running through. */
+   epithelium shows, darkening away from the walls with fibres still running through.
+
+   Three kinds of disorder keep it from reading as a lattice. The net's frame wanders: the
+   rings undulate around the circle and the columns wander across the width, so no ring is a
+   circle and no strand a straight ray. A fraction of the seeds are missing, so their
+   neighbours grow into cells two or three times the size, as the big crypts are. And every
+   wall has its own weight, so a strand thins to nothing here and thickens there, forking and
+   breaking rather than tiling. */
 
 #define NET_COLUMNS 56.0
 #define NET_SPLIT 1.4
@@ -327,10 +334,18 @@ float collaretteWreath(float t, float w, float offset) {
 #define NET_RADIAL_WIDTH 0.025
 #define NET_CROSS_WIDTH 0.008
 #define NET_THINNING 0.7
+#define NET_RING_WANDER 0.5
+#define NET_COLUMN_WANDER 1.2
+#define NET_DROPOUT 0.2
 
 vec2 hash22(vec2 p) {
     float a = hash21(p);
     return vec2(a, hash21(p + a + 7.31));
+}
+
+/* A seed's own hash, for the dropout and for the walls it shares. */
+float netSeedHash(float j, float c, float columns) {
+    return hash21(vec2(mod(c, columns), j) + 2.0 * NET_SEED);
 }
 
 /* Rings in a stretched radial coordinate: shorter inside the wreath, shrinking outward. */
@@ -355,10 +370,12 @@ float netColumns(float ring) {
 /* The seed of column c in ring j as an offset from the point, in the disc's frame: arc
    around at the point's radius, and radial in disc radii. */
 vec2 netSeedOffset(float j, float c, float columns, float t, float outward, float r) {
+    // A missing seed: pushed out of reach, so its neighbours take its cell.
+    if (netSeedHash(j, c, columns) < NET_DROPOUT) return vec2(1e3);
     vec2 h = hash22(vec2(mod(c, columns), j) + NET_SEED);
-    // Seeds stray mostly around the circle, little along the radius, so the walls between
+    // Seeds stray mostly around the circle, less along the radius, so the walls between
     // neighbours in a ring run radially, as the trabeculae do.
-    vec2 jitter = 0.5 + (h - 0.5) * uCryptJitter * vec2(1.0, 0.35);
+    vec2 jitter = 0.5 + (h - 0.5) * uCryptJitter * vec2(1.0, 0.6);
     float dt = (c + jitter.x) / columns - t;
     float seedOutward = ringSpaceInverse((j + jitter.y) * uCryptRing);
     return vec2(dt * 2.0 * PI * r, (seedOutward - outward) * (1.0 - REST_PUPIL));
@@ -391,10 +408,18 @@ vec2 trabeculaeAndCrypts(float t, float w, float outward) {
     }
 
     float r = REST_PUPIL + w * (1.0 - REST_PUPIL);
+
+    /* The frame wanders: the point is looked up in a warped frame, so the rings undulate by
+       up to half a ring height and the columns by about a cell, slowly, and the walls bend
+       with them. The arc is still measured at the true radius. */
+    float bend = irisFbm(vec2(t * 40.0, outward * 8.0), 40.0, 67.0) - 0.5;
+    outward += (irisFbm(vec2(t * 9.0, outward * 2.0), 9.0, 63.0) - 0.5) * NET_RING_WANDER * uCryptRing
+             + bend * 0.3 * uCryptRing;
+    t += (irisFbm(vec2(t * 6.0, outward * 3.0), 6.0, 65.0) - 0.5 + bend * 0.5) * NET_COLUMN_WANDER / NET_COLUMNS;
     float ringHere = floor(ringSpace(outward) / uCryptRing);
 
     /* Pass 1: the owning seed. Seeds stray little along the radius, so the owner sits in this
-       ring or the next either side. */
+       ring or the next either side; missing seeds can hand a cell to a column further off. */
     float md = 1e9;
     vec2 mr = vec2(0.0);
     float owner = 0.0;
@@ -403,7 +428,7 @@ vec2 trabeculaeAndCrypts(float t, float w, float outward) {
         float j = ringHere + dj;
         float columns = netColumns(j);
         float column = floor(t * columns);
-        for (float dc = -2.0; dc <= 2.0; dc += 1.0) {
+        for (float dc = -3.0; dc <= 3.0; dc += 1.0) {
             vec2 rr = netSeedOffset(j, column + dc, columns, t, outward, r);
             float d = dot(rr, rr);
             if (d < md) {
@@ -420,6 +445,7 @@ vec2 trabeculaeAndCrypts(float t, float w, float outward) {
     float strand = 0.0;
     float nearest = 1e9;
     float widthHere = 0.7 + 0.6 * irisFbm(vec2(t * 120.0, w * 6.0), 120.0, 59.0);
+    float ownerHash = netSeedHash(owner, ownerColumn, netColumns(owner));
     for (float dj = -1.0; dj <= 1.0; dj += 1.0) {
         float j = owner + dj;
         float columns = netColumns(j);
@@ -428,11 +454,17 @@ vec2 trabeculaeAndCrypts(float t, float w, float outward) {
         for (float dc = -3.0; dc <= 3.0; dc += 1.0) {
             vec2 rr = netSeedOffset(j, column + dc, columns, t, outward, r);
             vec2 diff = rr - mr;
-            if (dot(diff, diff) < 1e-8) continue;
+            if (dot(diff, diff) < 1e-8 || rr.x > 5e2) continue;
             float d = dot(0.5 * (mr + rr), normalize(diff));
             nearest = min(nearest, d);
+            if (width <= 0.0) continue;
+            // The wall's own weight, the same from either cell: some strands are faint
+            // threads, some thick bundles.
+            float other = netSeedHash(j, column + dc, columns);
+            float weight = hash21(vec2(ownerHash + other, ownerHash * other) * 7.0 + NET_SEED);
+            float wallWidth = width * (0.6 + 0.8 * weight);
             // A soft bump across the wall: a bundle with feathered flanks, not a line.
-            if (width > 0.0) strand = max(strand, pow(1.0 - smoothstep(0.0, width, d), 1.5));
+            strand = max(strand, (0.35 + 0.85 * weight) * pow(1.0 - smoothstep(0.0, wallWidth, d), 1.5));
         }
     }
 
