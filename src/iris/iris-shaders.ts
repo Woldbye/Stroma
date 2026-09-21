@@ -139,8 +139,8 @@ uniform float uCryptDepth;
 uniform float uCryptBulge;
 uniform float uTrabeculaeLight;
 uniform float uTrabeculaeReach;
-uniform float uTubes;
-uniform float uTubeWidth;
+uniform float uMesh;
+uniform float uMeshWidth;
 uniform float uBandReach;
 uniform float uBandSoftness;
 uniform float uBandBite;
@@ -458,10 +458,23 @@ vec2 cryptFlow(vec2 d, float rx, float ry) {
     return vec2(shift, slope);
 }
 
+/* The mesh network: the trabeculae as an open-cell foam, smooth struts round in section
+   that thicken into fillets where three meet, with rounded holes between. The struts are
+   the web's walls given thickness from the wall distance; a smooth minimum over the walls
+   makes the fillets. */
+#define MESH_SMOOTH 0.02
+#define MESH_LIP 0.006
+
+float meshSmin(float a, float b) {
+    float h = max(MESH_SMOOTH - abs(a - b), 0.0) / MESH_SMOOTH;
+    return min(a, b) - h * h * MESH_SMOOTH * 0.25;
+}
+
 /* Returns the trabeculae in x, the crypt depth in y, the fibres' deflection around the
    openings in z as a turn, and their crowding in w: 1 where the fibres are undisturbed,
    above it where they bunch beside an opening, below it where they part over one. */
-vec4 trabeculaeAndCrypts(float t, float w, float outward) {
+vec4 trabeculaeAndCrypts(float t, float w, float outward, out vec3 mesh) {
+    mesh = vec3(0.0);
     // The web fades out by its reach and stops one ring inside the wreath: skip the rest.
     if (outward > uTrabeculaeReach + 0.12 || outward < -(NET_RINGS_IN + 0.5) * uCryptRing / 1.6) {
         return vec4(0.0, 0.0, 0.0, 1.0);
@@ -504,6 +517,7 @@ vec4 trabeculaeAndCrypts(float t, float w, float outward) {
        wall's distance shapes the crypt inside. */
     float strand = 0.0;
     float nearest = 1e9;
+    float meshDist = 1e9;
     float widthHere = 0.7 + 0.6 * irisFbm(vec2(t * 120.0, w * 6.0), 120.0, 59.0);
     float ownerHash = netSeedHash(owner, ownerColumn, netColumns(owner));
     // The flow: every open seed in the window pushes the fibres, the owner's included.
@@ -525,6 +539,9 @@ vec4 trabeculaeAndCrypts(float t, float w, float outward) {
             if (dot(diff, diff) < 1e-8) continue;
             float d = dot(0.5 * (mr + rr), normalize(diff));
             nearest = min(nearest, d);
+            // The mesh's distance: a smooth minimum over the walls, so where three meet the
+            // struts run together in a concave fillet rather than a corner.
+            if (j >= 0.0 || owner >= 0.0) meshDist = meshSmin(meshDist, d);
             if (width <= 0.0) continue;
             // The wall's own weight, the same from either cell: some strands are faint
             // threads, some thick bundles.
@@ -546,70 +563,18 @@ vec4 trabeculaeAndCrypts(float t, float w, float outward) {
     float lens = pow(pow(q.x, 1.6) + pow(q.y, 1.6), 1.0 / 1.6);
     float floorShape = 1.0 - smoothstep(0.5, 1.0, lens);
     float crypt = open * min(floorShape, smoothstep(0.0, uCryptFeather, nearest)) * reach;
+    /* The mesh: the walls as struts, round in section, their width a knob; the cells as
+       holes that deepen away from the struts. Thick at the junctions by the smooth minimum. */
+    float strut = 1.0 - smoothstep(uMeshWidth - MESH_LIP, uMeshWidth + MESH_LIP, meshDist);
+    float section = meshDist / uMeshWidth;
+    float strutHeight = sqrt(saturate(1.0 - section * section));
+    float hole = smoothstep(uMeshWidth, uMeshWidth + 0.06, meshDist);
+    mesh = vec3(strut, strutHeight, hole) * reach * step(0.0, owner + NET_RINGS_IN + 0.5);
     // The displacement as a turn at this radius; the crowding is 1 less the slope, since
     // the picture at t shows the fibre that was displaced to it.
     float deflect = flow.x * reach / (2.0 * PI * r);
     float crowd = max(1.0 - flow.y * reach, 0.1);
     return vec4(strand * reach * inside, crypt, deflect, crowd);
-}
-
-/* ======================= wax tubes ======================= */
-
-/* The trabeculae as wax tubes: thick rounded bundles of tissue lying on the stroma, each a
-   capsule along its own wandering radial path from the collarette toward the root, with its
-   own width that swells and thins along it, and rounded ends. A second family, twice as
-   many, forks in from mid width between the first. All of them are joined by a smooth
-   minimum of their distances, so where two tubes meet the join is a rounded web of tissue,
-   the way wax bridges, and no junction is drawn. The ground between the tubes is the
-   stroma, deepest furthest from any tube. The height is the tube's round section, taken
-   from the real distance, so the relief lights a rope with a crest. Returns the tube's
-   coverage in x, its height in y and the ground's depth in z. */
-#define TUBE_SLOTS 32.0
-#define TUBE_SMOOTH 0.035
-#define TUBE_LIP 0.006
-
-/* The signed distance, in disc radii, from the point to tube c of a family with slots tubes
-   around the turn, running from about w0 to about w1. */
-float tubeDistance(float c, float slots, float t, float w, float r, float w0, float w1, float seed) {
-    float id = mod(c, slots);
-    vec2 h = hash22(vec2(id, seed));
-    // The path wanders across the turn by a slow noise along the width, up to half a slot.
-    float wander = (irisNoise(vec2(id + 0.5, w * 2.5), slots, seed + 5.0) - 0.5) * 1.0 / slots;
-    float tc = (c + 0.25 + 0.5 * h.x) / slots + wander;
-    float dt = t - tc;
-    dt -= floor(dt + 0.5);
-    float arc = dt * 2.0 * PI * r;
-    float swell = 0.75 + 0.5 * irisNoise(vec2(id + 0.5, w * 4.0), slots, seed + 9.0);
-    float radius = uTubeWidth * (0.7 + 0.6 * h.y) * swell;
-    float wa = w0 + 0.15 * hash21(vec2(id, seed + 3.0));
-    float wb = w1 - 0.35 * hash21(vec2(id, seed + 4.0)) * hash21(vec2(id, seed + 6.0));
-    float along = clamp(w, wa, wb);
-    vec2 d = vec2(arc, (w - along) * (1.0 - REST_PUPIL));
-    return length(d) - radius;
-}
-
-float tubeSmin(float a, float b) {
-    float h = max(TUBE_SMOOTH - abs(a - b), 0.0) / TUBE_SMOOTH;
-    return min(a, b) - h * h * TUBE_SMOOTH * 0.25;
-}
-
-vec3 waxTubes(float t, float w, float outward, float wStart) {
-    float r = REST_PUPIL + w * (1.0 - REST_PUPIL);
-    float sd = 1e3;
-    float slot = floor(t * TUBE_SLOTS);
-    for (float dc = -2.0; dc <= 2.0; dc += 1.0) {
-        sd = tubeSmin(sd, tubeDistance(slot + dc, TUBE_SLOTS, t, w, r, wStart, 1.05, 81.0));
-    }
-    float slot2 = floor(t * TUBE_SLOTS * 2.0);
-    for (float dc = -2.0; dc <= 2.0; dc += 1.0) {
-        sd = tubeSmin(sd, tubeDistance(slot2 + dc, TUBE_SLOTS * 2.0, t, w, r, wStart + 0.3, 1.05, 83.0));
-    }
-    float tube = 1.0 - smoothstep(-TUBE_LIP, TUBE_LIP, sd);
-    // The round section: the height rises steeply at the lip and flattens to the crest.
-    float crest = sqrt(saturate(-sd / uTubeWidth));
-    float ground = smoothstep(0.0, 0.05, sd);
-    float reach = smoothstep(-0.02, 0.06, outward);
-    return vec3(tube, crest, ground) * reach;
 }
 
 /* ======================= periphery ======================= */
@@ -776,10 +741,10 @@ float relief(float fibres, float wreath, vec4 net, vec3 tubes, float furrows, fl
     // is a raised bundle because the fibres are bunched there, not because a wall is drawn.
     float bunch = clamp(net.w - 1.0, -1.0, 1.5);
     float web = 0.06 * net.x + 0.2 * bunch - 0.5 * net.y;
-    // The wax tubes stand up in the round; the ground between them is the crypt.
+    // The mesh struts stand up in the round; the holes between them are the crypts.
     float wax = 0.4 * tubes.y - 0.4 * tubes.z;
-    float height = 0.5 + 0.15 * fibres * (1.0 - 0.9 * tubes.x * uTubes) + 0.2 * ridge
-                 + mix(web, wax, uTubes) - 0.25 * furrows - 0.2 * creases;
+    float height = 0.5 + 0.15 * fibres * (1.0 - 0.9 * tubes.x * uMesh) + 0.2 * ridge
+                 + mix(web, wax, uMesh) - 0.25 * furrows - 0.2 * creases;
     return saturate(height);
 }
 
@@ -802,21 +767,22 @@ void main() {
     float offset = w - collarettePath(ray.t);
 
     float outward = w - collaretteMean(ray.t);
-    vec4 net = trabeculaeAndCrypts(ray.t, w, outward);
-    vec3 tubes = waxTubes(ray.t, w, outward, collaretteMean(ray.t) + 0.04) * uTubes;
+    vec3 mesh;
+    vec4 net = trabeculaeAndCrypts(ray.t, w, outward, mesh);
+    vec3 tubes = mesh * uMesh;
     // Strands brighten and fade along their length.
     float along = 0.5 + 0.7 * irisFbm(vec2(ray.t * 90.0, w * 4.0), 90.0, 61.0);
     float fibres = stromalFibres(ray.t, w, offset, net.z, net.w);
     float wreath = collaretteWreath(ray.t, w, offset);
     vec2 melanin = pigment(ray.t, w);
     float band = peripheralBand(ray.t, w, fibres);
-    float stroma = 0.5 + fibres + wreath + uTrabeculaeLight * net.x * along * (1.0 - uTubes)
+    float stroma = 0.5 + fibres + wreath + uTrabeculaeLight * net.x * along * (1.0 - uMesh)
                  + band + melanin.y;
-    // A tube is smooth pale tissue; the fibres beneath show through it faintly. The ground
-    // between tubes is the stroma with its fibres, thin over the deep colour, not a pit.
+    // A strut is smooth pale tissue; the fibres beneath show through it faintly. The ground
+    // between struts is the stroma with its fibres, thin over the deep colour, not a pit.
     float wax = 0.72 + 0.2 * fibres + wreath + band + melanin.y;
     float tissue = mix(stroma, wax, tubes.x);
-    float crypt = max(net.y * (1.0 - uTubes), tubes.z * 0.55);
+    float crypt = max(net.y * (1.0 - uMesh), tubes.z * 0.55);
     float opening = max(pupillaryRuff(w, ray.t), uCryptDepth * crypt);
     float zone = encodeOffset(offset);
     outColor = vec4(saturate(tissue), opening, zone, melanin.x);
@@ -1086,8 +1052,8 @@ export const IRIS_DEFAULTS = {
   uCryptBulge: 0.7, // how far an opening pushes the fibres aside, as a fraction of its cell's half width
   uTrabeculaeLight: 0.3, // how far the drawn bundle core lightens the tissue; the bunched fibres add the weave
   uTrabeculaeReach: 0.45, // how far outward from the wreath the web fades out, in width
-  uTubes: 0, // the trabeculae as wax tubes, a level set, in place of the drawn web: 1 is all tubes
-  uTubeWidth: 0.035, // a tube's half width in disc radii, about 0.2 mm; each tube varies about it
+  uMesh: 0, // the trabeculae as a mesh network of round struts in place of the drawn web; 1 is all mesh
+  uMeshWidth: 0.03, // a strut's half width in disc radii, about 0.18 mm
   uBandReach: 0.4, // how far in from the root the pale band reaches at its widest, in width
   uBandSoftness: 0.08, // the base softness of its inner edge, in width; varies around this
   uBandBite: 0.15, // how far bright fibres push the band's edge outward
@@ -1151,8 +1117,8 @@ export const IRIS_BAKE_KEYS = [
   'uCryptBulge',
   'uTrabeculaeLight',
   'uTrabeculaeReach',
-  'uTubes',
-  'uTubeWidth',
+  'uMesh',
+  'uMeshWidth',
   'uBandReach',
   'uBandSoftness',
   'uBandBite',
