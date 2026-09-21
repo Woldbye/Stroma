@@ -140,7 +140,7 @@ uniform float uCryptBulge;
 uniform float uTrabeculaeLight;
 uniform float uTrabeculaeReach;
 uniform float uTubes;
-uniform float uTubeLevel;
+uniform float uTubeWidth;
 uniform float uBandReach;
 uniform float uBandSoftness;
 uniform float uBandBite;
@@ -555,36 +555,60 @@ vec4 trabeculaeAndCrypts(float t, float w, float outward) {
 
 /* ======================= wax tubes ======================= */
 
-/* The trabeculae as wax: an isosurface of a smooth field, after the living-wax shader.
-   A noise stretched along the radius, warped by the fibres' wander so its lobes wave and
-   fork, is cut at a level. Above the level there is a bundle, rounded in section by the
-   softness of the cut; where two lobes meet, the field's own smoothness bridges them with
-   a web of tissue, the way wax does, so nothing is drawn and no junction is a special case.
-   Below the level lies the ground, the crypt, its floor deepest where the field falls
-   furthest. The level rises just outside the wreath, where the largest crypts are, and the
-   tubes stop inside it. Returns the tube's presence in x, its rounded height in y and the
-   ground's depth in z. */
-#define TUBE_CELLS 72.0
-#define TUBE_ACROSS 3.5
-#define TUBE_LIP 0.06
+/* The trabeculae as wax tubes: thick rounded bundles of tissue lying on the stroma, each a
+   capsule along its own wandering radial path from the collarette toward the root, with its
+   own width that swells and thins along it, and rounded ends. A second family, twice as
+   many, forks in from mid width between the first. All of them are joined by a smooth
+   minimum of their distances, so where two tubes meet the join is a rounded web of tissue,
+   the way wax bridges, and no junction is drawn. The ground between the tubes is the
+   stroma, deepest furthest from any tube. The height is the tube's round section, taken
+   from the real distance, so the relief lights a rope with a crest. Returns the tube's
+   coverage in x, its height in y and the ground's depth in z. */
+#define TUBE_SLOTS 32.0
+#define TUBE_SMOOTH 0.035
+#define TUBE_LIP 0.006
 
-vec3 waxTubes(float t, float w, float outward, float deflect) {
-    float wave = fibreWave(t, w, 44.0);
-    float tw = t - deflect + wave * uFibreWave * 4.0 / TUBE_CELLS;
-    vec2 p = vec2(tw * TUBE_CELLS, w * TUBE_ACROSS);
-    // Two octaves for the lobes, and a faint fine grain that gives the wax its skin.
-    float f = irisNoise(p, TUBE_CELLS, 71.0) * 0.6
-            + irisNoise(p * 2.0, TUBE_CELLS * 2.0, 73.0) * 0.32
-            + irisNoise(p * 5.0, TUBE_CELLS * 5.0, 75.0) * 0.08;
-    // More ground where the big crypts sit, just outside the wreath; more wax by the root.
-    float level = uTubeLevel + 0.06 * exp(-pow((outward - 0.12) / 0.12, 2.0))
-                - 0.06 * smoothstep(0.5, 0.9, w);
-    float tube = smoothstep(level - TUBE_LIP, level + TUBE_LIP, f);
-    float reach = smoothstep(-0.02, 0.06, outward)
-                * (1.0 - smoothstep(uTrabeculaeReach - 0.15, uTrabeculaeReach + 0.1, outward));
-    float ground = smoothstep(level - TUBE_LIP, level - TUBE_LIP - 0.18, f);
-    // A rope in section: the height rises as a quarter circle from the lip to the crest.
-    float crest = sqrt(1.0 - (1.0 - tube) * (1.0 - tube));
+/* The signed distance, in disc radii, from the point to tube c of a family with slots tubes
+   around the turn, running from about w0 to about w1. */
+float tubeDistance(float c, float slots, float t, float w, float r, float w0, float w1, float seed) {
+    float id = mod(c, slots);
+    vec2 h = hash22(vec2(id, seed));
+    // The path wanders across the turn by a slow noise along the width, up to half a slot.
+    float wander = (irisNoise(vec2(id + 0.5, w * 2.5), slots, seed + 5.0) - 0.5) * 1.0 / slots;
+    float tc = (c + 0.25 + 0.5 * h.x) / slots + wander;
+    float dt = t - tc;
+    dt -= floor(dt + 0.5);
+    float arc = dt * 2.0 * PI * r;
+    float swell = 0.75 + 0.5 * irisNoise(vec2(id + 0.5, w * 4.0), slots, seed + 9.0);
+    float radius = uTubeWidth * (0.7 + 0.6 * h.y) * swell;
+    float wa = w0 + 0.15 * hash21(vec2(id, seed + 3.0));
+    float wb = w1 - 0.35 * hash21(vec2(id, seed + 4.0)) * hash21(vec2(id, seed + 6.0));
+    float along = clamp(w, wa, wb);
+    vec2 d = vec2(arc, (w - along) * (1.0 - REST_PUPIL));
+    return length(d) - radius;
+}
+
+float tubeSmin(float a, float b) {
+    float h = max(TUBE_SMOOTH - abs(a - b), 0.0) / TUBE_SMOOTH;
+    return min(a, b) - h * h * TUBE_SMOOTH * 0.25;
+}
+
+vec3 waxTubes(float t, float w, float outward, float wStart) {
+    float r = REST_PUPIL + w * (1.0 - REST_PUPIL);
+    float sd = 1e3;
+    float slot = floor(t * TUBE_SLOTS);
+    for (float dc = -2.0; dc <= 2.0; dc += 1.0) {
+        sd = tubeSmin(sd, tubeDistance(slot + dc, TUBE_SLOTS, t, w, r, wStart, 1.05, 81.0));
+    }
+    float slot2 = floor(t * TUBE_SLOTS * 2.0);
+    for (float dc = -2.0; dc <= 2.0; dc += 1.0) {
+        sd = tubeSmin(sd, tubeDistance(slot2 + dc, TUBE_SLOTS * 2.0, t, w, r, wStart + 0.3, 1.05, 83.0));
+    }
+    float tube = 1.0 - smoothstep(-TUBE_LIP, TUBE_LIP, sd);
+    // The round section: the height rises steeply at the lip and flattens to the crest.
+    float crest = sqrt(saturate(-sd / uTubeWidth));
+    float ground = smoothstep(0.0, 0.05, sd);
+    float reach = smoothstep(-0.02, 0.06, outward);
     return vec3(tube, crest, ground) * reach;
 }
 
@@ -779,7 +803,7 @@ void main() {
 
     float outward = w - collaretteMean(ray.t);
     vec4 net = trabeculaeAndCrypts(ray.t, w, outward);
-    vec3 tubes = waxTubes(ray.t, w, outward, net.z) * uTubes;
+    vec3 tubes = waxTubes(ray.t, w, outward, collaretteMean(ray.t) + 0.04) * uTubes;
     // Strands brighten and fade along their length.
     float along = 0.5 + 0.7 * irisFbm(vec2(ray.t * 90.0, w * 4.0), 90.0, 61.0);
     float fibres = stromalFibres(ray.t, w, offset, net.z, net.w);
@@ -1063,7 +1087,7 @@ export const IRIS_DEFAULTS = {
   uTrabeculaeLight: 0.3, // how far the drawn bundle core lightens the tissue; the bunched fibres add the weave
   uTrabeculaeReach: 0.45, // how far outward from the wreath the web fades out, in width
   uTubes: 0, // the trabeculae as wax tubes, a level set, in place of the drawn web: 1 is all tubes
-  uTubeLevel: 0.56, // the level the tube field is cut at; higher is more ground and thinner tubes
+  uTubeWidth: 0.035, // a tube's half width in disc radii, about 0.2 mm; each tube varies about it
   uBandReach: 0.4, // how far in from the root the pale band reaches at its widest, in width
   uBandSoftness: 0.08, // the base softness of its inner edge, in width; varies around this
   uBandBite: 0.15, // how far bright fibres push the band's edge outward
@@ -1128,7 +1152,7 @@ export const IRIS_BAKE_KEYS = [
   'uTrabeculaeLight',
   'uTrabeculaeReach',
   'uTubes',
-  'uTubeLevel',
+  'uTubeWidth',
   'uBandReach',
   'uBandSoftness',
   'uBandBite',
