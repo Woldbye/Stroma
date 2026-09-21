@@ -1,5 +1,7 @@
 # Stroma
 
+![The multi_color eye, rendered by Stroma](public/stroma.png)
+
 A procedural model of the human iris in WebGL2, face on, with a pupil that contracts and
 dilates like the organ. The structure is built one anatomical layer at a time, each its own
 unit of shader code: the pupillary ruff, the collarette, the stromal fibres, the trabeculae
