@@ -139,6 +139,8 @@ uniform float uCryptDepth;
 uniform float uCryptBulge;
 uniform float uTrabeculaeLight;
 uniform float uTrabeculaeReach;
+uniform float uTubes;
+uniform float uTubeLevel;
 uniform float uBandReach;
 uniform float uBandSoftness;
 uniform float uBandBite;
@@ -551,6 +553,41 @@ vec4 trabeculaeAndCrypts(float t, float w, float outward) {
     return vec4(strand * reach * inside, crypt, deflect, crowd);
 }
 
+/* ======================= wax tubes ======================= */
+
+/* The trabeculae as wax: an isosurface of a smooth field, after the living-wax shader.
+   A noise stretched along the radius, warped by the fibres' wander so its lobes wave and
+   fork, is cut at a level. Above the level there is a bundle, rounded in section by the
+   softness of the cut; where two lobes meet, the field's own smoothness bridges them with
+   a web of tissue, the way wax does, so nothing is drawn and no junction is a special case.
+   Below the level lies the ground, the crypt, its floor deepest where the field falls
+   furthest. The level rises just outside the wreath, where the largest crypts are, and the
+   tubes stop inside it. Returns the tube's presence in x, its rounded height in y and the
+   ground's depth in z. */
+#define TUBE_CELLS 72.0
+#define TUBE_ACROSS 3.5
+#define TUBE_LIP 0.06
+
+vec3 waxTubes(float t, float w, float outward, float deflect) {
+    float wave = fibreWave(t, w, 44.0);
+    float tw = t - deflect + wave * uFibreWave * 4.0 / TUBE_CELLS;
+    vec2 p = vec2(tw * TUBE_CELLS, w * TUBE_ACROSS);
+    // Two octaves for the lobes, and a faint fine grain that gives the wax its skin.
+    float f = irisNoise(p, TUBE_CELLS, 71.0) * 0.6
+            + irisNoise(p * 2.0, TUBE_CELLS * 2.0, 73.0) * 0.32
+            + irisNoise(p * 5.0, TUBE_CELLS * 5.0, 75.0) * 0.08;
+    // More ground where the big crypts sit, just outside the wreath; more wax by the root.
+    float level = uTubeLevel + 0.06 * exp(-pow((outward - 0.12) / 0.12, 2.0))
+                - 0.06 * smoothstep(0.5, 0.9, w);
+    float tube = smoothstep(level - TUBE_LIP, level + TUBE_LIP, f);
+    float reach = smoothstep(-0.02, 0.06, outward)
+                * (1.0 - smoothstep(uTrabeculaeReach - 0.15, uTrabeculaeReach + 0.1, outward));
+    float ground = smoothstep(level - TUBE_LIP, level - TUBE_LIP - 0.18, f);
+    // A rope in section: the height rises as a quarter circle from the lip to the crest.
+    float crest = sqrt(1.0 - (1.0 - tube) * (1.0 - tube));
+    return vec3(tube, crest, ground) * reach;
+}
+
 /* ======================= periphery ======================= */
 
 /* The peripheral ciliary zone: the soft, cloudy, pale band inside the limbus, where the
@@ -709,13 +746,16 @@ vec2 pigment(float t, float w) {
    Written as a height about a half so the present pass can light it, which is where the
    highlight and shadow of a textured iris come from. The furrows are taken at their baked
    pattern, so their relief does not deepen with the pupil; only their darkness does. */
-float relief(float fibres, float wreath, vec4 net, float furrows, float creases) {
+float relief(float fibres, float wreath, vec4 net, vec3 tubes, float furrows, float creases) {
     float ridge = wreath / max(uCollaretteLight, 1e-3);
     // Crowded collagen stands higher and parted collagen lies lower: the rim of an opening
     // is a raised bundle because the fibres are bunched there, not because a wall is drawn.
     float bunch = clamp(net.w - 1.0, -1.0, 1.5);
-    float height = 0.5 + 0.15 * fibres + 0.2 * ridge + 0.06 * net.x + 0.2 * bunch - 0.5 * net.y
-                 - 0.25 * furrows - 0.2 * creases;
+    float web = 0.06 * net.x + 0.2 * bunch - 0.5 * net.y;
+    // The wax tubes stand up in the round; the ground between them is the crypt.
+    float wax = 0.4 * tubes.y - 0.4 * tubes.z;
+    float height = 0.5 + 0.15 * fibres * (1.0 - 0.9 * tubes.x * uTubes) + 0.2 * ridge
+                 + mix(web, wax, uTubes) - 0.25 * furrows - 0.2 * creases;
     return saturate(height);
 }
 
@@ -737,22 +777,29 @@ void main() {
 
     float offset = w - collarettePath(ray.t);
 
-    vec4 net = trabeculaeAndCrypts(ray.t, w, w - collaretteMean(ray.t));
+    float outward = w - collaretteMean(ray.t);
+    vec4 net = trabeculaeAndCrypts(ray.t, w, outward);
+    vec3 tubes = waxTubes(ray.t, w, outward, net.z) * uTubes;
     // Strands brighten and fade along their length.
     float along = 0.5 + 0.7 * irisFbm(vec2(ray.t * 90.0, w * 4.0), 90.0, 61.0);
     float fibres = stromalFibres(ray.t, w, offset, net.z, net.w);
     float wreath = collaretteWreath(ray.t, w, offset);
     vec2 melanin = pigment(ray.t, w);
-    float tissue = 0.5 + fibres + wreath
-                 + uTrabeculaeLight * net.x * along + peripheralBand(ray.t, w, fibres)
-                 + melanin.y;
-    float opening = max(pupillaryRuff(w, ray.t), uCryptDepth * net.y);
+    float band = peripheralBand(ray.t, w, fibres);
+    float stroma = 0.5 + fibres + wreath + uTrabeculaeLight * net.x * along * (1.0 - uTubes)
+                 + band + melanin.y;
+    // A tube is smooth pale tissue; the fibres beneath show through it faintly. The ground
+    // between tubes is the stroma with its fibres, thin over the deep colour, not a pit.
+    float wax = 0.72 + 0.2 * fibres + wreath + band + melanin.y;
+    float tissue = mix(stroma, wax, tubes.x);
+    float crypt = max(net.y * (1.0 - uTubes), tubes.z * 0.55);
+    float opening = max(pupillaryRuff(w, ray.t), uCryptDepth * crypt);
     float zone = encodeOffset(offset);
     outColor = vec4(saturate(tissue), opening, zone, melanin.x);
 
     float furrows = contractionFurrows(ray.t, w);
     float creases = radialFurrows(ray.t, w, offset);
-    outDynamics = vec4(furrows, creases, relief(fibres, wreath, net, furrows, creases), 1.0);
+    outDynamics = vec4(furrows, creases, relief(fibres, wreath, net, tubes, furrows, creases), 1.0);
 }
 `;
 
@@ -973,7 +1020,13 @@ void main() {
     col = lidLayer(col, p);
     col = corneaLayer(col, p);
     col = toSrgb(col);
-    col = mix(col, debugLayer(col, structure, dynamics, w, ray.t), uDebug);
+    // Debug 1 is the coordinate overlay; 2 shows the lit height field alone, as clay.
+    if (uDebug > 1.5) {
+        col = toSrgb(vec3(0.3 + 0.5 * dynamics.b) * reliefLayer(rest, dynamics.b));
+        col = mix(col, vec3(0.0), pupilMask(w));
+    } else {
+        col = mix(col, debugLayer(col, structure, dynamics, w, ray.t), uDebug);
+    }
 
     float a = disc * uAlpha;
     // Premultiplied alpha: the canvas is composited that way.
@@ -1009,6 +1062,8 @@ export const IRIS_DEFAULTS = {
   uCryptBulge: 0.7, // how far an opening pushes the fibres aside, as a fraction of its cell's half width
   uTrabeculaeLight: 0.3, // how far the drawn bundle core lightens the tissue; the bunched fibres add the weave
   uTrabeculaeReach: 0.45, // how far outward from the wreath the web fades out, in width
+  uTubes: 0, // the trabeculae as wax tubes, a level set, in place of the drawn web: 1 is all tubes
+  uTubeLevel: 0.56, // the level the tube field is cut at; higher is more ground and thinner tubes
   uBandReach: 0.4, // how far in from the root the pale band reaches at its widest, in width
   uBandSoftness: 0.08, // the base softness of its inner edge, in width; varies around this
   uBandBite: 0.15, // how far bright fibres push the band's edge outward
@@ -1072,6 +1127,8 @@ export const IRIS_BAKE_KEYS = [
   'uCryptBulge',
   'uTrabeculaeLight',
   'uTrabeculaeReach',
+  'uTubes',
+  'uTubeLevel',
   'uBandReach',
   'uBandSoftness',
   'uBandBite',
