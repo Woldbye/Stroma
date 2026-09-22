@@ -141,6 +141,7 @@ uniform float uTrabeculaeLight;
 uniform float uTrabeculaeReach;
 uniform float uMesh;
 uniform float uMeshWidth;
+uniform float uMeshTaper;
 uniform float uBandReach;
 uniform float uBandSoftness;
 uniform float uBandBite;
@@ -565,10 +566,12 @@ vec4 trabeculaeAndCrypts(float t, float w, float outward, out vec3 mesh) {
     float crypt = open * min(floorShape, smoothstep(0.0, uCryptFeather, nearest)) * reach;
     /* The mesh: the walls as struts, round in section, their width a knob; the cells as
        holes that deepen away from the struts. Thick at the junctions by the smooth minimum. */
-    float strut = 1.0 - smoothstep(uMeshWidth - MESH_LIP, uMeshWidth + MESH_LIP, meshDist);
-    float section = meshDist / uMeshWidth;
+    // The struts taper outward: thick bundles by the collarette, filaments by the root.
+    float meshWidth = uMeshWidth * (1.0 - uMeshTaper * smoothstep(0.3, 0.95, w));
+    float strut = 1.0 - smoothstep(meshWidth - MESH_LIP, meshWidth + MESH_LIP, meshDist);
+    float section = meshDist / meshWidth;
     float strutHeight = sqrt(saturate(1.0 - section * section));
-    float hole = smoothstep(uMeshWidth, uMeshWidth + 0.05, meshDist);
+    float hole = smoothstep(meshWidth, meshWidth + 0.05, meshDist);
     mesh = vec3(strut, strutHeight, hole) * reach * step(0.0, owner + NET_RINGS_IN + 0.5);
     // The displacement as a turn at this radius; the crowding is 1 less the slope, since
     // the picture at t shows the fibre that was displaced to it.
@@ -830,6 +833,7 @@ uniform vec3 uPupillaryDeep;
 uniform vec3 uCiliaryColor;
 uniform vec3 uCiliaryDeep;
 uniform vec3 uMeshColor;
+uniform float uMeshSpread;
 uniform vec3 uCollaretteColor;
 uniform float uCollaretteTint;
 uniform float uCollaretteBleed;
@@ -998,9 +1002,12 @@ void main() {
     vec4 dynamics = texture(uIrisDynamics, rest);
 
     Zone zone = zoneTones(decodeOffset(structure.b));
-    // The mesh's struts carry their own colour over the stroma; the holes show the zone beneath.
-    zone.tone = mix(zone.tone, uMeshColor, dynamics.a);
-    zone.deep = mix(zone.deep, uMeshColor * 0.6, dynamics.a);
+    // The mesh's struts are pale tissue of the zone's own hue; the collarette's colour spreads
+    // outward along them from the pupillary zone and dies away by the spread. The holes show
+    // the zone beneath.
+    float spread = dynamics.a * (1.0 - smoothstep(0.0, uMeshSpread, decodeOffset(structure.b)));
+    zone.tone = mix(zone.tone, uMeshColor, spread);
+    zone.deep = mix(zone.deep, uMeshColor * 0.6, spread);
     // Pigment lies in the border layer with the fibres, so the tissue's lightness runs over it.
     zone.tone = pigmentLayer(zone.tone, structure.a);
     zone.deep = pigmentLayer(zone.deep, structure.a) * 0.6;
@@ -1057,7 +1064,8 @@ export const IRIS_DEFAULTS = {
   uTrabeculaeLight: 0.3, // how far the drawn bundle core lightens the tissue; the bunched fibres add the weave
   uTrabeculaeReach: 0.45, // how far outward from the wreath the web fades out, in width
   uMesh: 0, // the trabeculae as a mesh network of round struts in place of the drawn web; 1 is all mesh
-  uMeshWidth: 0.03, // a strut's half width in disc radii, about 0.18 mm
+  uMeshWidth: 0.03, // a strut's half width in disc radii by the collarette, about 0.18 mm
+  uMeshTaper: 0.6, // how much of that width the struts lose by the root
   uBandReach: 0.4, // how far in from the root the pale band reaches at its widest, in width
   uBandSoftness: 0.08, // the base softness of its inner edge, in width; varies around this
   uBandBite: 0.15, // how far bright fibres push the band's edge outward
@@ -1085,7 +1093,8 @@ export const IRIS_DEFAULTS = {
   uPupillaryDeep: [0.28, 0.36, 0.5], // thin tissue in the pupillary zone: a slate blue
   uCiliaryColor: [0.28, 0.45, 0.62],
   uCiliaryDeep: [0.08, 0.2, 0.44], // thin tissue in the ciliary zone: cobalt over the epithelium
-  uMeshColor: [0.82, 0.66, 0.34], // the mesh struts' own colour, seen where they cover the stroma
+  uMeshColor: [0.82, 0.66, 0.34], // the colour that spreads outward along the mesh's struts from the collarette
+  uMeshSpread: 0.45, // how far outward from the collarette that colour reaches along the struts, in width
   uCollaretteColor: [0.8, 0.85, 0.9],
   uCollaretteTint: 0, // how strongly the collarette's own colour shows; 0 leaves it as tissue
   uCollaretteBleed: 0.1, // how far outward the collarette's colour bleeds, in width
@@ -1124,6 +1133,7 @@ export const IRIS_BAKE_KEYS = [
   'uTrabeculaeReach',
   'uMesh',
   'uMeshWidth',
+  'uMeshTaper',
   'uBandReach',
   'uBandSoftness',
   'uBandBite',
