@@ -9,24 +9,26 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "run-p type-check \"build-only {@}\" --",
+    "build": "run-p type-check lint:shaders \"build-only {@}\" --",
     "preview": "vite preview",
     "build-only": "vite build",
     "type-check": "vue-tsc --build",
     "lint:oxlint": "oxlint . --fix -D correctness",
     "lint:eslint": "eslint . --fix",
-    "lint": "run-s lint:oxlint lint:eslint",
+    "lint:shaders": "node scripts/check-shaders.mjs",
+    "lint": "run-s lint:oxlint lint:eslint lint:shaders",
     "lint:check:oxlint": "oxlint . -D correctness",
     "lint:check:eslint": "eslint .",
-    "lint:check": "run-s lint:check:oxlint lint:check:eslint",
-    "format": "prettier --write \"src/**/*.{ts,vue,css,json}\" \"*.md\"",
-    "format:check": "prettier --check \"src/**/*.{ts,vue,css,json}\" \"*.md\""
+    "lint:check": "run-s lint:check:oxlint lint:check:eslint lint:shaders",
+    "format": "prettier --write \"src/**/*.{ts,vue,css,json}\" \"scripts/**/*.mjs\" \"*.md\"",
+    "format:check": "prettier --check \"src/**/*.{ts,vue,css,json}\" \"scripts/**/*.mjs\" \"*.md\""
   },
   "dependencies": {
     "ogl": "^1.0.11",
     "vue": "^3.5.43"
   },
   "devDependencies": {
+    "@shaderfrog/glsl-parser": "^7.0.1",
     "@tailwindcss/vite": "^4.3.3",
     "@tsconfig/node22": "^22.0.6",
     "@types/node": "^26.6.2",
