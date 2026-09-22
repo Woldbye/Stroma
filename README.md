@@ -2,12 +2,17 @@
 
 ![The multi_color eye, rendered by Stroma](public/stroma.png)
 
+**The demo runs at <https://woldbye.github.io/Stroma/>** — the eye face on, one palette per
+reference photograph, the room's light on a slider. It needs WebGL2: where the model cannot
+start, the page prints the reason in place of the eye, and the `diagnostics` link reports what
+the device offers.
+
 A procedural model of the human iris in WebGL2, face on, with a pupil that contracts and
 dilates like the organ. The structure is built one anatomical layer at a time, each its own
 unit of shader code: the pupillary ruff, the collarette, the stromal fibres, the trabeculae
 and the crypts of Fuchs between them, the peripheral ciliary zone, the contraction furrows
 and the radial furrows, the pigment. The pupil follows the light reflex of Pamplona, Oliveira
-and Baranoski, with hippus. Three palettes, each picked from a reference photograph.
+and Baranoski, with hippus. Five palettes, each picked from a reference photograph.
 
 Stack: Vue 3, Vite, TypeScript, [ogl](https://github.com/oframe/ogl) on WebGL2, Tailwind.
 
@@ -46,9 +51,10 @@ iris width, and the biomechanical correction to that is about one percent of the
   millimetres, with hippus as band-limited noise.
 - `src/iris/iris-palettes.ts` — the presets, one per reference photograph.
 - `src/iris/iris-mount.ts` — mounting the iris on an element and driving its frames.
-- `src/demo/IrisDemo.vue` — the demo page. `src/dev/IrisHarness.vue` — the bench: size,
-  pupil, reflex, palette, coordinate lines, timings, a pixel difference against a pinned
-  render.
+- `src/demo/IrisDemo.vue` — the demo page, with `webgl-report.ts` behind it: what a device
+  says about itself when the model will not start on it.
+- `src/dev/IrisHarness.vue` — the bench: size, pupil, reflex, palette, coordinate lines,
+  timings, a pixel difference against a pinned render.
 
 ## License
 
