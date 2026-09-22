@@ -568,7 +568,7 @@ vec4 trabeculaeAndCrypts(float t, float w, float outward, out vec3 mesh) {
     float strut = 1.0 - smoothstep(uMeshWidth - MESH_LIP, uMeshWidth + MESH_LIP, meshDist);
     float section = meshDist / uMeshWidth;
     float strutHeight = sqrt(saturate(1.0 - section * section));
-    float hole = smoothstep(uMeshWidth, uMeshWidth + 0.06, meshDist);
+    float hole = smoothstep(uMeshWidth, uMeshWidth + 0.05, meshDist);
     mesh = vec3(strut, strutHeight, hole) * reach * step(0.0, owner + NET_RINGS_IN + 0.5);
     // The displacement as a turn at this radius; the crowding is 1 less the slope, since
     // the picture at t shows the fibre that was displaced to it.
@@ -742,7 +742,7 @@ float relief(float fibres, float wreath, vec4 net, vec3 tubes, float furrows, fl
     float bunch = clamp(net.w - 1.0, -1.0, 1.5);
     float web = 0.06 * net.x + 0.2 * bunch - 0.5 * net.y;
     // The mesh struts stand up in the round; the holes between them are the crypts.
-    float wax = 0.4 * tubes.y - 0.4 * tubes.z;
+    float wax = 0.4 * tubes.y - 0.6 * tubes.z;
     float height = 0.5 + 0.15 * fibres * (1.0 - 0.9 * tubes.x * uMesh) + 0.2 * ridge
                  + mix(web, wax, uMesh) - 0.25 * furrows - 0.2 * creases;
     return saturate(height);
@@ -760,7 +760,7 @@ void main() {
        a few texels of margin feed the mip levels and the bilinear edge. */
     if (w < -0.03 || ray.dist > ray.root + 0.02) {
         outColor = vec4(0.5, w < 0.0 ? 1.0 : 0.0, encodeOffset(w - uCollarette), 0.0);
-        outDynamics = vec4(0.0, 0.0, 0.0, 1.0);
+        outDynamics = vec4(0.0);
         return;
     }
 
@@ -780,16 +780,16 @@ void main() {
                  + band + melanin.y;
     // A strut is smooth pale tissue; the fibres beneath show through it faintly. The ground
     // between struts is the stroma with its fibres, thin over the deep colour, not a pit.
-    float wax = 0.72 + 0.2 * fibres + wreath + band + melanin.y;
+    float wax = 0.58 + 0.15 * fibres + wreath + band + melanin.y;
     float tissue = mix(stroma, wax, tubes.x);
-    float crypt = max(net.y * (1.0 - uMesh), tubes.z * 0.55);
+    float crypt = max(net.y * (1.0 - uMesh), tubes.z * 0.75);
     float opening = max(pupillaryRuff(w, ray.t), uCryptDepth * crypt);
     float zone = encodeOffset(offset);
     outColor = vec4(saturate(tissue), opening, zone, melanin.x);
 
     float furrows = contractionFurrows(ray.t, w);
     float creases = radialFurrows(ray.t, w, offset);
-    outDynamics = vec4(furrows, creases, relief(fibres, wreath, net, tubes, furrows, creases), 1.0);
+    outDynamics = vec4(furrows, creases, relief(fibres, wreath, net, tubes, furrows, creases), tubes.x);
 }
 `;
 
@@ -829,6 +829,7 @@ uniform vec3 uPupillaryColor;
 uniform vec3 uPupillaryDeep;
 uniform vec3 uCiliaryColor;
 uniform vec3 uCiliaryDeep;
+uniform vec3 uMeshColor;
 uniform vec3 uCollaretteColor;
 uniform float uCollaretteTint;
 uniform float uCollaretteBleed;
@@ -997,6 +998,9 @@ void main() {
     vec4 dynamics = texture(uIrisDynamics, rest);
 
     Zone zone = zoneTones(decodeOffset(structure.b));
+    // The mesh's struts carry their own colour over the stroma; the holes show the zone beneath.
+    zone.tone = mix(zone.tone, uMeshColor, dynamics.a);
+    zone.deep = mix(zone.deep, uMeshColor * 0.6, dynamics.a);
     // Pigment lies in the border layer with the fibres, so the tissue's lightness runs over it.
     zone.tone = pigmentLayer(zone.tone, structure.a);
     zone.deep = pigmentLayer(zone.deep, structure.a) * 0.6;
@@ -1081,6 +1085,7 @@ export const IRIS_DEFAULTS = {
   uPupillaryDeep: [0.28, 0.36, 0.5], // thin tissue in the pupillary zone: a slate blue
   uCiliaryColor: [0.28, 0.45, 0.62],
   uCiliaryDeep: [0.08, 0.2, 0.44], // thin tissue in the ciliary zone: cobalt over the epithelium
+  uMeshColor: [0.82, 0.66, 0.34], // the mesh struts' own colour, seen where they cover the stroma
   uCollaretteColor: [0.8, 0.85, 0.9],
   uCollaretteTint: 0, // how strongly the collarette's own colour shows; 0 leaves it as tissue
   uCollaretteBleed: 0.1, // how far outward the collarette's colour bleeds, in width
