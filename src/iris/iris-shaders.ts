@@ -1,7 +1,8 @@
 /* The iris surface, face on: a procedural model of the human iris in its own anatomical
    coordinates. The angle around the pupil and the width across the iris, 0 at the pupil
    margin and 1 at the root, are the axes every structure is defined in; docs/anatomy.md has
-   the names and the measurements. GLSL ES 3.00 (WebGL2 only).
+   the names and the measurements. GLSL ES 3.00 (WebGL2 only), deliberately using none of its
+   reserved words.
 
    Two passes. The bake draws the structure into a square texture at the rest pupil whenever
    a structural knob or the size changes. The present pass maps each screen pixel to the
@@ -618,14 +619,14 @@ float peripheralBand(float t, float w, float fibres) {
 float contractionFurrows(float t, float w) {
     float count = clamp(floor(uFurrowCount + 0.5), 0.0, FURROW_MAX);
     float spacing = (uFurrowOuter - uFurrowInner) / max(count, 1.0);
-    float shared = (turnNoise(t, 5.0, 90.0) - 0.5) * 0.05;
+    float slowWobble = (turnNoise(t, 5.0, 90.0) - 0.5) * 0.05;
     float depth = 0.0;
     for (float i = 0.0; i < FURROW_MAX; i += 1.0) {
         if (i >= count) break;
         float seed = 91.0 + i * 7.0;
         // Its own place within its slot, the slots narrowing toward the root.
         float u = (i + 0.15 + 0.7 * hash21(vec2(i, 89.0))) / count;
-        float at = mix(uFurrowInner, uFurrowOuter, sqrt(u)) + shared
+        float at = mix(uFurrowInner, uFurrowOuter, sqrt(u)) + slowWobble
                  + (turnNoise(t, 40.0, seed + 3.0) - 0.5) * 0.3 * spacing;
         // A ring with breaks: present most of the way round, gone for a stretch or two.
         float presence = smoothstep(0.15, 0.4, turnNoise(t, 7.0, seed + 1.0));
