@@ -1,4 +1,56 @@
 @import 'tailwindcss';
+@import 'tw-animate-css';
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
+
+/* The demo's palette, from the approved mockup. The shadcn names are the ones its primitives
+   are written against; the rest name the demo's own surfaces. */
+@theme {
+  --color-background: #06080c;
+  --color-foreground: #e8ecf2;
+  --color-primary: #e8ecf2;
+  --color-primary-foreground: #06080c;
+  --color-secondary: #161c25;
+  --color-muted: #141922;
+  --color-muted-foreground: #7b8492;
+  --color-accent: #1b212b;
+  --color-accent-foreground: #e8ecf2;
+  --color-border: #1a202a;
+  --color-input: #161b24;
+  --color-ring: #9aa3b1;
+
+  --color-subtle: #9aa3b1;
+  --color-label: #8a93a3;
+  --color-rail: #080a10;
+  --color-panel: #0a0d13;
+  --color-well: #0c1017;
+  --color-chip: #161c25;
+  --color-divider: #151a23;
+  --color-rule: #141922;
+  --color-edge: #262d39;
+  --color-ring-idle: #232a35;
+  --color-thumb-off: #6b7484;
+  --color-handle: #2a323d;
+}
+
+/* The demo's type, ground and borders hold only while the demo is on the page, so the harness
+   keeps Tailwind's defaults. They sit on the root because the drawer renders outside the
+   layout, at the end of the body. */
+@layer base {
+  :root:has(.demo-theme) {
+    --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+    --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+  }
+
+  :root:has(.demo-theme) *,
+  :root:has(.demo-theme) ::after,
+  :root:has(.demo-theme) ::before,
+  :root:has(.demo-theme) ::backdrop {
+    border-color: var(--color-border);
+  }
+}
 
 *,
 *::before,

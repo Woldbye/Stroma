@@ -2,9 +2,9 @@
 
 ![The multi_color eye, rendered by Stroma](public/stroma.png)
 
-**The demo runs at <https://woldbye.github.io/Stroma/>** — the eye face on, one palette per
-reference photograph, the room's light on a slider. It needs WebGL2, and says so in place of
-the eye where it cannot start.
+**The demo runs at <https://woldbye.github.io/Stroma/>** — the eye face on, with each of its
+anatomical layers on a switch. It needs WebGL2, and says so in place of the eye where it cannot
+start.
 
 A procedural model of the human iris in WebGL2, face on, with a pupil that contracts and
 dilates like the organ. The structure is built one anatomical layer at a time, each its own
@@ -13,7 +13,24 @@ and the crypts of Fuchs between them, the peripheral ciliary zone, the contracti
 and the radial furrows, the pigment. The pupil follows the light reflex of Pamplona, Oliveira
 and Baranoski, with hippus. Five palettes, each picked from a reference photograph.
 
-Stack: Vue 3, Vite, TypeScript, [ogl](https://github.com/oframe/ogl) on WebGL2, Tailwind.
+Stack: Vue 3, Vite, TypeScript, [ogl](https://github.com/oframe/ogl) on WebGL2, Tailwind,
+[shadcn-vue](https://www.shadcn-vue.com/) on reka-ui.
+
+## The demo
+
+- **Eye**: five eyes, one per reference photograph, each with its own palette and the few
+  structural knobs that differ between them.
+- **Drawn as**: Tissue, the eye in colour; Structure, the same form as uncoloured clay;
+  Geometry, the model's coordinates drawn over the tissue.
+- **Light**: Night, Indoors, Daylight. The pupil answers through the light reflex, with hippus,
+  at its own pace.
+- **Layers**: a switch for each of thirteen anatomical layers, centre outward, from the
+  pupillary ruff to the cornea and lid. Switching them off strips the eye down to its
+  coordinates; switching them back on shows what each adds. A layer an eye does not have is
+  greyed out.
+
+On a phone the eyes stay under the iris, and the light and the layers open in a drawer from the
+Controls button.
 
 ## Commands
 
@@ -50,7 +67,16 @@ iris width, and the biomechanical correction to that is about one percent of the
   millimetres, with hippus as band-limited noise.
 - `src/iris/iris-palettes.ts` — the presets, one per reference photograph.
 - `src/iris/iris-mount.ts` — mounting the iris on an element and driving its frames.
-- `src/demo/IrisDemo.vue` — the demo page.
+- `src/demo/IrisDemo.vue` — the demo page: its state, and which control goes in which slot.
+- `src/demo/iris-layers.ts`, `src/demo/iris-eyes.ts` — the thirteen layers with the knob values
+  that switch each off, and the five eyes, their swatches derived from the palettes.
+- `src/composables/use-iris.ts` — where the demo drives the model: mounting, frames and
+  applying the state.
+- `src/composables/use-breakpoints.ts` — Tailwind's breakpoints as reactive flags.
+- `src/components/layout/` — `AppLayout` and the desktop and phone layouts it chooses between.
+- `src/components/controls/` — the controls, which take plain data and may not import the
+  model; ESLint enforces it.
+- `src/components/ui/` — shadcn-vue primitives, taken from its repository at a pinned commit.
 - `src/dev/IrisHarness.vue` — the bench: size, pupil, reflex, palette, coordinate lines,
   timings, a pixel difference against a pinned render.
 

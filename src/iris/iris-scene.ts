@@ -19,9 +19,10 @@ export type LookKey = keyof typeof IRIS_DEFAULTS;
 export type IrisScene = {
   /**
    * Eases the look toward its targets and integrates the fade. Returns true once every value
-   * is at rest and has been drawn at rest, so the caller can skip the render.
+   * is at rest and has been drawn at rest, so the caller can skip the render. With `pupil`
+   * false the reflex is not stepped, so the look can be landed without moving the pupil.
    */
-  tick(dt: number, animated: boolean): boolean;
+  tick(dt: number, animated: boolean, pupil?: boolean): boolean;
   /** Re-bakes if the structure or size changed, then draws the current state to the canvas. */
   render(): void;
   /** Runs after the renderer has resized its canvas. */
@@ -196,8 +197,8 @@ export function createIrisScene(r: Renderer, options: IrisSceneOptions = {}): Ir
   };
 
   return {
-    tick(dt, animated) {
-      if (reflexOn && dt > 0) {
+    tick(dt, animated, pupil = true) {
+      if (reflexOn && pupil && dt > 0) {
         const radius = radiusFraction(reflex.step(dt * 1000, light, hippusOn));
         look.uPupil = radius;
         lookTarget.uPupil = radius;
