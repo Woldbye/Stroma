@@ -13,29 +13,6 @@ export type Palette = Partial<{
 }>;
 
 export const IRIS_PALETTES = {
-  /* Blue, a pale grey-blue pupillary zone over slate, a mid blue ciliary zone over cobalt,
-     the collarette the same pale tissue as the trabeculae, a dark blue-grey limbal ring, a
-     fine ruff with almost no shadow, a few freckles and pale nodules. */
-  'band-iris': {
-    uPupillaryColor: [0.5, 0.57, 0.64],
-    uPupillaryDeep: [0.28, 0.36, 0.5],
-    uCiliaryColor: [0.28, 0.45, 0.62],
-    uCiliaryDeep: [0.08, 0.2, 0.44],
-    uCollaretteColor: [0.8, 0.85, 0.9],
-    uCollaretteTint: 0,
-    uCollaretteBleed: 0.1,
-    uLimbalColor: [0.1, 0.14, 0.2],
-    uEpitheliumColor: [0.22, 0.13, 0.09],
-    uRuffShade: 0.02,
-    uTissueWhiten: 0.8,
-    uTrabeculaeReach: 0.45,
-    uPigmentPatches: 0,
-    uPatchZone: 1,
-    uPigmentFreckles: 0.3,
-    uNoduleLight: 0.3,
-    uPigmentColor: [0.85, 0.6, 0.25],
-    uFreckleColor: [0.35, 0.18, 0.08],
-  },
   /* Central heterochromia, picked from the photo: an amber pupillary zone over brown-orange,
      a rusty collarette bleeding outward, a blue ciliary zone with a cyan cast over deep
      cobalt, a soft blue-grey limbus, a deep margin shadow, rust specks and amber patches
@@ -60,6 +37,29 @@ export const IRIS_PALETTES = {
     uPigmentColor: [0.82, 0.55, 0.22],
     uFreckleColor: [0.4, 0.18, 0.08],
   },
+  /* Blue, a pale grey-blue pupillary zone over slate, a mid blue ciliary zone over cobalt,
+     the collarette the same pale tissue as the trabeculae, a dark blue-grey limbal ring, a
+     fine ruff with almost no shadow, a few freckles and pale nodules. */
+  'band-iris': {
+    uPupillaryColor: [0.5, 0.57, 0.64],
+    uPupillaryDeep: [0.28, 0.36, 0.5],
+    uCiliaryColor: [0.28, 0.45, 0.62],
+    uCiliaryDeep: [0.08, 0.2, 0.44],
+    uCollaretteColor: [0.8, 0.85, 0.9],
+    uCollaretteTint: 0,
+    uCollaretteBleed: 0.1,
+    uLimbalColor: [0.1, 0.14, 0.2],
+    uEpitheliumColor: [0.22, 0.13, 0.09],
+    uRuffShade: 0.02,
+    uTissueWhiten: 0.8,
+    uTrabeculaeReach: 0.45,
+    uPigmentPatches: 0,
+    uPatchZone: 1,
+    uPigmentFreckles: 0.3,
+    uNoduleLight: 0.3,
+    uPigmentColor: [0.85, 0.6, 0.25],
+    uFreckleColor: [0.35, 0.18, 0.08],
+  },
   /* Pale grey-white pupillary zone over a cool grey, a deep blue ciliary zone over navy, a
      thin dark limbus, almost no ruff, yellow patches toward the pupil. */
   eye_poster: {
@@ -81,6 +81,64 @@ export const IRIS_PALETTES = {
     uNoduleLight: 0.2,
     uPigmentColor: [0.95, 0.7, 0.2],
     uFreckleColor: [0.8, 0.45, 0.1],
+  },
+  /* A stream iris: fine parallel fibres over the whole width, few and small openings, so the
+     collagen barely deflects. Grey-green pupillary zone, blue-green ciliary zone over a
+     muted teal, a soft collarette, amber patches round the pupil and a few rust freckles. */
+  blue_green: {
+    uPupillaryColor: [0.64, 0.68, 0.52],
+    uPupillaryDeep: [0.3, 0.38, 0.32],
+    uCiliaryColor: [0.4, 0.6, 0.62],
+    uCiliaryDeep: [0.12, 0.3, 0.36],
+    uCollaretteColor: [0.76, 0.72, 0.5],
+    uCollaretteTint: 0.35,
+    uCollaretteBleed: 0.08,
+    uLimbalColor: [0.12, 0.2, 0.24],
+    uEpitheliumColor: [0.12, 0.09, 0.06],
+    uRuffShade: 0.03,
+    uTissueWhiten: 0.5,
+    uTrabeculaeReach: 0.2,
+    uCryptFraction: 0.35,
+    uCryptBulge: 0.4,
+    uCryptColumns: 64,
+    uCryptDepth: 0.6,
+    uFibreContrast: 0.55,
+    uFibreFade: 0.15,
+    uFurrowCount: 4,
+    uPigmentPatches: 0.8,
+    uPatchZone: 0,
+    uPigmentFreckles: 0.6,
+    uNoduleLight: 0,
+    uPigmentColor: [0.85, 0.62, 0.25],
+    uFreckleColor: [0.55, 0.3, 0.1],
+  },
+  /* Hazel with central heterochromia: a chocolate pupillary zone cut by dark crypts, a honey
+     amber that bleeds from the collarette over most of the ciliary zone, a moss-green
+     periphery carrying pale contraction rings, and a wide soft blue-grey limbus. Taken from
+     the author's own left eye. */
+  amber_moss: {
+    uPupillaryColor: [0.5, 0.3, 0.12],
+    uPupillaryDeep: [0.2, 0.09, 0.03],
+    uCiliaryColor: [0.5, 0.54, 0.36],
+    uCiliaryDeep: [0.18, 0.24, 0.16],
+    uCollaretteColor: [0.86, 0.6, 0.2],
+    uCollaretteTint: 0.95,
+    uCollaretteBleed: 0.35,
+    uLimbalColor: [0.26, 0.32, 0.36],
+    uEpitheliumColor: [0.12, 0.06, 0.03],
+    uRuffShade: 0.06,
+    uTissueWhiten: 0.55,
+    uTrabeculaeReach: 0.3,
+    uCryptFraction: 0.6,
+    uFibreContrast: 0.55,
+    uBandLight: 0.3,
+    uFurrowCount: 5,
+    uPigmentPatches: 0.8,
+    uPatchZone: 1,
+    uPigmentFreckles: 0.15,
+    uNoduleLight: 0,
+    uPigmentColor: [0.85, 0.58, 0.2],
+    uFreckleColor: [0.25, 0.12, 0.05],
   },
   /* A flower iris: the collagen splits and converges round large rounded openings that run
      to the root, with bright bunched rims and deep teal floors. A flat amber pupillary zone,
@@ -118,36 +176,6 @@ export const IRIS_PALETTES = {
     uNoduleLight: 0,
     uPigmentColor: [0.85, 0.65, 0.3],
     uFreckleColor: [0.4, 0.22, 0.08],
-  },
-  /* A stream iris: fine parallel fibres over the whole width, few and small openings, so the
-     collagen barely deflects. Grey-green pupillary zone, blue-green ciliary zone over a
-     muted teal, a soft collarette, amber patches round the pupil and a few rust freckles. */
-  blue_green: {
-    uPupillaryColor: [0.64, 0.68, 0.52],
-    uPupillaryDeep: [0.3, 0.38, 0.32],
-    uCiliaryColor: [0.4, 0.6, 0.62],
-    uCiliaryDeep: [0.12, 0.3, 0.36],
-    uCollaretteColor: [0.76, 0.72, 0.5],
-    uCollaretteTint: 0.35,
-    uCollaretteBleed: 0.08,
-    uLimbalColor: [0.12, 0.2, 0.24],
-    uEpitheliumColor: [0.12, 0.09, 0.06],
-    uRuffShade: 0.03,
-    uTissueWhiten: 0.5,
-    uTrabeculaeReach: 0.2,
-    uCryptFraction: 0.35,
-    uCryptBulge: 0.4,
-    uCryptColumns: 64,
-    uCryptDepth: 0.6,
-    uFibreContrast: 0.55,
-    uFibreFade: 0.15,
-    uFurrowCount: 4,
-    uPigmentPatches: 0.8,
-    uPatchZone: 0,
-    uPigmentFreckles: 0.6,
-    uNoduleLight: 0,
-    uPigmentColor: [0.85, 0.62, 0.25],
-    uFreckleColor: [0.55, 0.3, 0.1],
   },
 } as const satisfies Record<string, Palette>;
 

@@ -3,7 +3,7 @@ import { IRIS_PALETTES, type Palette, type PaletteName } from '@/iris/iris-palet
 import type { LookKey } from '@/iris/iris-scene';
 import { IRIS_DEFAULTS } from '@/iris/iris-shaders';
 
-/* The five eyes, one per palette, each shown as itself in miniature: its own colours, centre
+/* The six eyes, one per palette, each shown as itself in miniature: its own colours, centre
    outward, and its ciliary colour as the glow round it on the page. */
 
 export type EyeName = PaletteName;

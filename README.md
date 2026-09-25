@@ -11,14 +11,14 @@ dilates like the organ. The structure is built one anatomical layer at a time, e
 unit of shader code: the pupillary ruff, the collarette, the stromal fibres, the trabeculae
 and the crypts of Fuchs between them, the peripheral ciliary zone, the contraction furrows
 and the radial furrows, the pigment. The pupil follows the light reflex of Pamplona, Oliveira
-and Baranoski, with hippus. Five palettes, each picked from a reference photograph.
+and Baranoski, with hippus. Six palettes, each picked from a reference photograph.
 
 Stack: Vue 3, Vite, TypeScript, [ogl](https://github.com/oframe/ogl) on WebGL2, Tailwind,
 [shadcn-vue](https://www.shadcn-vue.com/) on reka-ui.
 
 ## The demo
 
-- **Eye**: five eyes, one per reference photograph, each with its own palette and the few
+- **Eye**: six eyes, one per reference photograph, each with its own palette and the few
   structural knobs that differ between them.
 - **Drawn as**: Tissue, the eye in colour; Structure, the same form as uncoloured clay;
   Geometry, the model's coordinates drawn over the tissue.
@@ -69,7 +69,7 @@ iris width, and the biomechanical correction to that is about one percent of the
 - `src/iris/iris-mount.ts` — mounting the iris on an element and driving its frames.
 - `src/demo/IrisDemo.vue` — the demo page: its state, and which control goes in which slot.
 - `src/demo/iris-layers.ts`, `src/demo/iris-eyes.ts` — the thirteen layers with the knob values
-  that switch each off, and the five eyes, their swatches derived from the palettes.
+  that switch each off, and the six eyes, their swatches derived from the palettes.
 - `src/composables/use-iris.ts` — where the demo drives the model: mounting, frames and
   applying the state.
 - `src/composables/use-breakpoints.ts` — Tailwind's breakpoints as reactive flags.

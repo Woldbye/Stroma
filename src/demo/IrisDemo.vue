@@ -10,11 +10,11 @@ import { DRAWN_AS_OPTIONS, LIGHT_OPTIONS, type DrawnAs, type Light } from './dem
 import { IRIS_EYES, type EyeName } from './iris-eyes';
 import { layerRows, type LayerId } from './iris-layers';
 
-/* The demo: the iris on a dark page with its five eyes beneath it, and the controls that strip
+/* The demo: the iris on a dark page with its six eyes beneath it, and the controls that strip
    it to its coordinates and build it back: how it is drawn, the room's light, and a switch for
    each anatomical layer. */
 
-const eye = ref<EyeName>('green_iris');
+const eye = ref<EyeName>(IRIS_EYES[0].name);
 const drawnAs = ref<DrawnAs>('tissue');
 const light = ref<Light>('indoors');
 const off = ref<readonly LayerId[]>([]);
