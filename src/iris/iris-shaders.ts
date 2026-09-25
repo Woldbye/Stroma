@@ -572,7 +572,8 @@ vec4 trabeculaeAndCrypts(float t, float w, float outward, out vec3 mesh) {
     float strut = 1.0 - smoothstep(meshWidth - MESH_LIP, meshWidth + MESH_LIP, meshDist);
     float section = meshDist / meshWidth;
     float strutHeight = sqrt(saturate(1.0 - section * section));
-    float hole = smoothstep(meshWidth, meshWidth + 0.05, meshDist);
+    // Inside the wreath there is no web, so no holes: the struts on its wall are the last.
+    float hole = smoothstep(meshWidth, meshWidth + 0.05, meshDist) * step(0.0, owner);
     mesh = vec3(strut, strutHeight, hole) * reach * step(0.0, owner + NET_RINGS_IN + 0.5);
     // The displacement as a turn at this radius; the crowding is 1 less the slope, since
     // the picture at t shows the fibre that was displaced to it.
@@ -833,6 +834,8 @@ uniform vec3 uPupillaryColor;
 uniform vec3 uPupillaryDeep;
 uniform vec3 uCiliaryColor;
 uniform vec3 uCiliaryDeep;
+uniform vec3 uCiliaryEdgeColor;
+uniform float uCiliaryEdgeTint;
 uniform vec3 uMeshColor;
 uniform float uMeshSpread;
 uniform vec3 uCollaretteColor;
@@ -840,10 +843,12 @@ uniform float uCollaretteTint;
 uniform float uCollaretteBleed;
 uniform vec3 uLimbalColor;
 uniform float uLimbusStart;
+uniform float uLimbusVeil;
 uniform vec3 uEpitheliumColor;
 uniform float uTissueWhiten;
 uniform vec3 uPigmentColor;
 uniform vec3 uFreckleColor;
+uniform vec3 uFurrowColor;
 ${COORDINATES}
 /* One-pixel anti-aliased edge at the root; fwidth makes it resolution independent. */
 float discMask(float r) {
@@ -860,7 +865,8 @@ float isoline(float x) {
 /* ======================= layers ======================= */
 
 /* The zone base tones: the pupillary zone inside the collarette's path, the ciliary zone
-   outside, and the collarette's own colour strongest on the path and bleeding outward along
+   outside, its tone turning toward an edge colour on the way to the root in an eye whose
+   ciliary zone is not one colour, and the collarette's own colour strongest on the path and bleeding outward along
    the tissue. Smooth fields; every texture above them is tissue or opening. Each zone has
    two colours: its tone where the tissue is of ordinary thickness, and its deep colour where
    the tissue is thin over the dark epithelium. In a blue eye the deep colour is a saturated
@@ -874,7 +880,8 @@ struct Zone {
 Zone zoneTones(float offset) {
     float pupillary = 1.0 - smoothstep(-0.02, 0.02, offset);
     Zone zone;
-    zone.tone = mix(uCiliaryColor, uPupillaryColor, pupillary);
+    vec3 ciliary = mix(uCiliaryColor, uCiliaryEdgeColor, uCiliaryEdgeTint * smoothstep(0.0, 0.55, offset));
+    zone.tone = mix(ciliary, uPupillaryColor, pupillary);
     zone.deep = mix(uCiliaryDeep, uPupillaryDeep, pupillary);
     float wreath = offset < 0.0 ? exp(offset / 0.03) : exp(-offset / uCollaretteBleed);
     zone.tone = mix(zone.tone, uCollaretteColor, wreath * uCollaretteTint);
@@ -896,6 +903,13 @@ vec3 limbusLayer(vec3 col, float w) {
     return mix(col, uLimbalColor, smoothstep(uLimbusStart, 1.0, w));
 }
 
+/* The limbus's outer edge: the translucent limbus lies over the root, so in some eyes the
+   ring does not stop at a line but fades out into the sclera over a band. The iris does not
+   draw the sclera, so the fade is coverage: whatever the host draws behind shows through. */
+float limbusVeil(float w) {
+    return uLimbusVeil > 0.0 ? 1.0 - smoothstep(1.0 - uLimbusVeil, 1.0, w) : 1.0;
+}
+
 /* Tissue lightness over the zone tone: below the zone's own tone it goes toward the zone's
    deep colour; above it the tone is multiplied, so bright fibres stay in the zone's hue and
    only whiten by the knob, and the gaps between them are saturated. Lightness multiplies
@@ -915,16 +929,25 @@ vec3 openingLayer(vec3 col, Zone zone, float opening) {
     return mix(col, seen, opening);
 }
 
-/* The furrows, scaled with the pupil: the contraction furrows deepen as the pupil dilates
-   past rest and the tissue bunches, the radial furrows open as it constricts and the ciliary
-   zone stretches. Joined to the static openings as a union, so a crypt and a furrow crossing
-   it stay soft. */
-float furrowLayer(float opening, vec4 dynamics) {
-    float dilation = saturate((uPupil - REST_PUPIL) / (0.67 - REST_PUPIL));
+/* The furrows, scaled with the pupil, and of two kinds. The radial furrows open as the pupil
+   constricts and the ciliary zone stretches: stretched thin, the stroma shows the dark
+   ground as an opening does, so they join the openings as a union, and a crypt and a furrow
+   crossing it stay soft. The contraction furrows deepen as the pupil dilates and the tissue
+   bunches: a fold of the anterior border layer with the stroma still beneath it, which packs
+   the layer's melanin, so its floor takes the fold colour, brown in a pigmented eye and a
+   darker shade of the zone in a blue one. The tissue's lightness runs through the fold, so
+   the fibres stay in view in the groove, and the relief shades its walls. */
+float creaseLayer(float opening, vec4 dynamics) {
     float constriction = saturate((REST_PUPIL - uPupil) / (REST_PUPIL - 0.17));
-    float furrows = dynamics.r * (uFurrowRest + uFurrowDeepen * dilation);
     float creases = dynamics.g * (uCreaseRest + uCreaseOpen * constriction);
-    return 1.0 - (1.0 - opening) * (1.0 - furrows) * (1.0 - creases);
+    return 1.0 - (1.0 - opening) * (1.0 - creases);
+}
+
+vec3 furrowLayer(vec3 col, float tissue, float opening, vec4 dynamics) {
+    float dilation = saturate((uPupil - REST_PUPIL) / (0.67 - REST_PUPIL));
+    float fold = saturate(dynamics.r * (uFurrowRest + uFurrowDeepen * dilation));
+    vec3 groove = uFurrowColor * (0.6 + 0.8 * tissue);
+    return mix(col, groove, fold * (1.0 - opening));
 }
 
 /* The relief, lit: the baked height's gradient, taken over a fixed step in the bake so the
@@ -1013,7 +1036,9 @@ void main() {
     zone.tone = pigmentLayer(zone.tone, structure.a);
     zone.deep = pigmentLayer(zone.deep, structure.a) * 0.6;
     vec3 col = tissueLayer(zone, structure.r);
-    col = openingLayer(col, zone, furrowLayer(structure.g, dynamics));
+    float opening = creaseLayer(structure.g, dynamics);
+    col = openingLayer(col, zone, opening);
+    col = furrowLayer(col, structure.r, opening, dynamics);
     col = limbusLayer(col, w);
     col = mix(col, uPupilColor, pupilMask(w));
     // The surface is lit in linear light: the relief, the lid, then the cornea over it all.
@@ -1030,7 +1055,7 @@ void main() {
         col = mix(col, debugLayer(col, structure, dynamics, w, ray.t), uDebug);
     }
 
-    float a = disc * uAlpha;
+    float a = disc * limbusVeil(w) * uAlpha;
     // Premultiplied alpha: the canvas is composited that way.
     outColor = vec4(col * a, a);
 }
@@ -1089,11 +1114,14 @@ export const IRIS_DEFAULTS = {
   uNoduleLight: 0.3, // how far Wölfflin nodules lighten the tissue near the root
   uPigmentColor: [0.85, 0.6, 0.25], // sparse melanin, amber
   uFreckleColor: [0.35, 0.18, 0.08], // dense melanin, dark brown
+  uFurrowColor: [0.1, 0.2, 0.36], // a contraction furrow's floor, the anterior border layer folded: a deep blue here, brown in a pigmented eye
   // The palette: band-iris by default, the other presets in iris-palettes.ts.
   uPupillaryColor: [0.5, 0.57, 0.64],
   uPupillaryDeep: [0.28, 0.36, 0.5], // thin tissue in the pupillary zone: a slate blue
   uCiliaryColor: [0.28, 0.45, 0.62],
   uCiliaryDeep: [0.08, 0.2, 0.44], // thin tissue in the ciliary zone: cobalt over the epithelium
+  uCiliaryEdgeColor: [0.28, 0.45, 0.62], // the ciliary zone's tone toward the root, where it differs from its tone by the collarette
+  uCiliaryEdgeTint: 0, // how far the ciliary tone turns to the edge colour by the root; 0 keeps one tone across the zone
   uMeshColor: [0.82, 0.66, 0.34], // the colour that spreads outward along the mesh's struts from the collarette
   uMeshSpread: 0.45, // how far outward from the collarette that colour reaches along the struts, in width
   uCollaretteColor: [0.8, 0.85, 0.9],
@@ -1101,6 +1129,7 @@ export const IRIS_DEFAULTS = {
   uCollaretteBleed: 0.1, // how far outward the collarette's colour bleeds, in width
   uLimbalColor: [0.1, 0.14, 0.2],
   uLimbusStart: 0.9, // where the limbal darkening begins, in width
+  uLimbusVeil: 0, // how far in from the root the limbus fades the iris out into the sclera, in width; 0 is a sharp edge
   uEpitheliumColor: [0.22, 0.13, 0.09], // the pigment epithelium, seen through every opening
   uTissueWhiten: 0.8, // how far the brightest tissue goes toward white
   uDebug: 0, // the coordinate overlay; 1 shows it
