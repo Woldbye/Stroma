@@ -1,6 +1,6 @@
 # Stroma
 
-![The multi_color and band-iris eyes, rendered by Stroma](public/stroma.png)
+![The multi_color and eye_poster eyes, rendered by Stroma](public/stroma.png)
 
 **The demo runs at <https://woldbye.github.io/Stroma/>** — the eye face on, with each of its
 anatomical layers on a switch. It needs WebGL2, and says so in place of the eye where it cannot
